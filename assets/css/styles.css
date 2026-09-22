@@ -359,6 +359,10 @@ button.hbar:hover .hbar__track i{filter:brightness(1.08)}
 .tbl .grow{min-width:170px}
 .tbl .mut{color:var(--muted)}
 .tbl .rank{color:var(--muted); width:38px}
+.rankmedal{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; font-size:15px; border-radius:50%; background:var(--surface-2); color:var(--muted); font-weight:800}
+.rankmedal--1,.rankmedal--2,.rankmedal--3{font-size:18px; background:transparent}
+.agentcell{display:flex; align-items:center; gap:10px}
+.agentava{width:28px; height:28px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:11px; flex:none}
 .cellbar{display:flex; align-items:center; gap:10px; justify-content:flex-end}
 .cellbar i{display:block; height:6px; border-radius:99px; background:var(--amber); min-width:2px}
 .badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11.5px; font-weight:700; background:var(--surface-3); color:var(--text-2)}
