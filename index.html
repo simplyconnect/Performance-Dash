@@ -62,11 +62,11 @@
         </button>
         <div class="pop" id="connectPop" hidden>
           <h3>Connect your Google Sheet</h3>
-          <p class="connectPop__hint">Paste the Apps Script Web App URL (see <code>apps-script/README.md</code>). The dashboard will refresh straight from your sheet — no re-upload needed.</p>
+          <p class="connectPop__hint">Paste the Apps Script Web App URL (see <code>apps-script/README.md</code>). The dashboard reads live from your sheet only — no sample/demo data is ever shown.</p>
           <input class="dd__search connectPop__input" id="connectUrl" placeholder="https://script.google.com/macros/s/…/exec" />
           <div class="connectPop__actions">
             <button class="btn btn--amber" id="btnConnectSave">Save &amp; load</button>
-            <button class="btn btn--ghost" id="btnConnectClear">Use sample</button>
+            <button class="btn btn--ghost" id="btnConnectClear">Clear</button>
           </div>
         </div>
       </div>
@@ -199,7 +199,7 @@
       <div class="grid">
         <div class="card c12" id="sec-agents">
           <div class="card__head">
-            <div><div class="card__title">Agent Performance</div><div class="card__sub">Answered calls per agent, with handling time — the source sheet only logs an agent on answered calls</div></div>
+            <div><div class="card__title">Top 10 Agents</div><div class="card__sub">Ranked by calls handled, with handling time — the source sheet only logs an agent on answered calls</div></div>
           </div>
           <div class="tbl-tools">
             <input class="tbl-search" id="search_agents" placeholder="Search agent…" />
