@@ -1,0 +1,778 @@
+/* =========================================================
+   Simply Connect – Performance Dashboard app logic
+   ========================================================= */
+(() => {
+  'use strict';
+
+  const DATA_URL_KEY = 'sc_dashboard_feed_url';
+  const DEFAULT_FEED = null; // set via config.js (window.SC_CONFIG.feedUrl) or left blank for sample data
+  const SAMPLE_URL = 'data/sample-data.json';
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const money = n => '$' + Math.round(n).toLocaleString('en-US');
+  const int = n => Math.round(n).toLocaleString('en-US');
+  const pct = (n, d = 1) => (isFinite(n) ? n.toFixed(d) : '0.0') + '%';
+  const hms = s => {
+    s = Math.max(0, Math.round(s));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m ${sec}s`;
+  };
+  const hmsShort = s => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60), sec = s % 60; return `${m}:${String(sec).padStart(2, '0')}`; };
+
+  const COLORS = {
+    violet: '#5240D6', peri: '#3F49B8', magenta: '#B23FA8', rose: '#E5484D',
+    amber: '#FDAC00', green: '#2FA352', blue: '#2B83C6', brown: '#9A6A3A', slate: '#9AA0B4',
+  };
+  const RESULT_COLOR = {
+    'Answered': COLORS.green, 'Abandoned': COLORS.rose, 'Overflow - Time': COLORS.amber,
+    'Stranded - Unavailable': COLORS.violet, 'Stranded': COLORS.peri, 'Transferred': COLORS.magenta, 'Escaped': COLORS.slate,
+  };
+  const PALETTE = [COLORS.violet, COLORS.amber, COLORS.magenta, COLORS.green, COLORS.peri, COLORS.rose, COLORS.blue, COLORS.brown, COLORS.slate];
+
+  // ---------------- State ----------------
+  const state = {
+    granularity: 'weekly', // daily | weekly | monthly
+    start: null, end: null,
+    queues: new Set(), agents: new Set(), results: new Set(),
+    compare: true,
+    theme: localStorage.getItem('sc_theme') || 'light',
+    trendMetric: 'volume', // volume | result
+    tablePage: { agents: 1, queues: 1, sales: 1 },
+    tableSort: { agents: { key: 'calls', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' } },
+    tableSearch: { agents: '', queues: '', sales: '' },
+  };
+
+  // ---------------- Boot ----------------
+  document.addEventListener('DOMContentLoaded', init);
+
+  async function init() {
+    applyTheme(state.theme, false);
+    wireStaticUI();
+    const feedUrl = (window.SC_CONFIG && window.SC_CONFIG.feedUrl) || localStorage.getItem(DATA_URL_KEY) || DEFAULT_FEED;
+    await bootLoad(feedUrl);
+  }
+
+  async function bootLoad(feedUrl) {
+    showBoot(true);
+    try {
+      if (feedUrl) {
+        await DataEngine.load(feedUrl);
+        showSourceBanner('live', feedUrl);
+      } else {
+        await DataEngine.load(SAMPLE_URL);
+        showSourceBanner('sample');
+      }
+    } catch (err) {
+      console.error(err);
+      try {
+        await DataEngine.load(SAMPLE_URL);
+        showSourceBanner('error-fallback', feedUrl, err.message);
+      } catch (err2) {
+        showFatal(err2.message);
+        showBoot(false);
+        return;
+      }
+    }
+    setupFilterDefaults();
+    populateFilterOptions();
+    renderAll();
+    showBoot(false);
+  }
+
+  function showBoot(on) {
+    const b = $('#boot');
+    if (!b) return;
+    if (on) { b.classList.remove('is-off'); } else { setTimeout(() => b.classList.add('is-off'), 250); }
+  }
+  function showFatal(msg) {
+    $('#dataBanner').innerHTML = `
+      <div class="banner banner--err">
+        ${icon('alert')}
+        <div><b>Couldn't load any data.</b> ${escapeHtml(msg)}. Check the connection settings and reload.</div>
+      </div>`;
+  }
+  function showSourceBanner(kind, url, err) {
+    const el2 = $('#dataBanner');
+    if (kind === 'live') {
+      el2.innerHTML = `<div class="banner banner--ok">${icon('check')}<div><b>Connected.</b> Live data from your Google Sheet${DataEngine.generatedAt ? ' · updated ' + timeAgo(DataEngine.generatedAt) : ''}.</div>
+        <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Refresh</button></div>`;
+    } else if (kind === 'sample') {
+      el2.innerHTML = `<div class="banner">${icon('info')}<div><b>Showing sample data</b> from your uploaded file (${DataEngine.meta ? int(DataEngine.meta.callRows) + ' calls · ' + int(DataEngine.meta.salesRows) + ' sales' : ''}). Connect your live Google Sheet in <button class="btn btn--ghost" id="openConnect" style="display:inline-flex;height:24px;padding:0 10px;vertical-align:-2px">Connect data</button> to replace it.</div></div>`;
+    } else {
+      el2.innerHTML = `<div class="banner banner--err">${icon('alert')}<div><b>Couldn't reach the live feed</b> (${escapeHtml(err || '')}) — showing sample data instead.</div>
+        <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button></div>`;
+    }
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad((window.SC_CONFIG && window.SC_CONFIG.feedUrl) || localStorage.getItem(DATA_URL_KEY)));
+    const oc = $('#openConnect'); if (oc) oc.addEventListener('click', () => openConnectPanel());
+  }
+  function timeAgo(iso) {
+    try {
+      const d = new Date(iso); const s = (Date.now() - d.getTime()) / 1000;
+      if (s < 60) return 'just now';
+      if (s < 3600) return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      return Math.floor(s / 86400) + 'd ago';
+    } catch (e) { return ''; }
+  }
+
+  // ---------------- Filters setup ----------------
+  function setupFilterDefaults() {
+    const { min, max } = DataEngine.bounds;
+    state.start = min; state.end = max;
+    $('#dateStart').value = DataEngine.fmtDate(min);
+    $('#dateEnd').value = DataEngine.fmtDate(max);
+    $('#dateStart').min = DataEngine.fmtDate(min); $('#dateStart').max = DataEngine.fmtDate(max);
+    $('#dateEnd').min = DataEngine.fmtDate(min); $('#dateEnd').max = DataEngine.fmtDate(max);
+  }
+
+  function populateFilterOptions() {
+    buildDropdown('queues', 'Queue', DataEngine.distinctQueues(), q => DataEngine.calls.filter(c => c.queue === q).length);
+    buildDropdown('agents', 'Agent', DataEngine.distinctAgents(), a => DataEngine.calls.filter(c => c.agent === a).length);
+    buildDropdown('results', 'Result', DataEngine.distinctResults(), r => DataEngine.calls.filter(c => c.result === r).length);
+  }
+
+  // ---------------- Filtered data (memoized per render) ----------------
+  function currentFilter() {
+    return { start: state.start, end: state.end, queues: state.queues, agents: state.agents, results: state.results };
+  }
+
+  function renderAll() {
+    const f = currentFilter();
+    const calls = DataEngine.filterCalls(f);
+    const sales = DataEngine.filterSales(f);
+    const pf = DataEngine.prevPeriod(f);
+    const pCalls = DataEngine.filterCalls(pf);
+    const pSales = DataEngine.filterSales(pf);
+
+    renderKpis(calls, sales, pCalls, pSales);
+    renderServiceLevel(calls);
+    renderResultBars(calls);
+    renderTrend(calls);
+    renderResultCluster(calls);
+    renderQueueLeaderboard(calls);
+    renderAgentTable(calls);
+    renderHeatmap(calls);
+    renderSalesKpis(sales, pSales);
+    renderSalesByProvider(sales);
+    renderSalesByTeam(sales);
+    renderSalesTable(sales);
+    renderDataHealth(calls, sales);
+    updateFilterChipStates();
+  }
+
+  // ---------------- KPIs ----------------
+  function deltaChip(cur, prev) {
+    const d = DataEngine.pctDelta(cur, prev);
+    if (d === null) return `<span class="chip chip--flat">—</span>`;
+    const up = d >= 0;
+    const cls = Math.abs(d) < 0.5 ? 'chip--flat' : (up ? 'chip--up' : 'chip--dn');
+    const sign = d > 0 ? '+' : '';
+    return `<span class="chip ${cls}">${sign}${d.toFixed(0)}%</span>`;
+  }
+
+  function renderKpis(calls, sales, pCalls, pSales) {
+    const total = calls.length, pTotal = pCalls.length;
+    const answered = calls.filter(c => c.result === 'Answered');
+    const pAnswered = pCalls.filter(c => c.result === 'Answered').length;
+    const abandoned = calls.filter(c => c.result === 'Abandoned').length;
+    const pAbandoned = pCalls.filter(c => c.result === 'Abandoned').length;
+    const aht = answered.length ? answered.reduce((a, c) => a + c.talk + c.hold + c.wrap, 0) / answered.length : 0;
+    const pAnsweredRows = pCalls.filter(c => c.result === 'Answered');
+    const pAht = pAnsweredRows.length ? pAnsweredRows.reduce((a, c) => a + c.talk + c.hold + c.wrap, 0) / pAnsweredRows.length : 0;
+    const totalSales = sales.length, pTotalSales = pSales.length;
+    const rgus = sales.reduce((a, s) => a + (s.rgu || 1), 0);
+    const pRgus = pSales.reduce((a, s) => a + (s.rgu || 1), 0);
+    const points = sales.reduce((a, s) => a + (s.total || 0), 0);
+    const pPoints = pSales.reduce((a, s) => a + (s.total || 0), 0);
+    const conv = total ? (totalSales / total) * 100 : 0;
+    const pConv = pTotal ? (pTotalSales / pTotal) * 100 : 0;
+
+    const items = [
+      { k: 1, ico: 'phone', label: 'Total Calls', value: int(total), delta: deltaChip(total, pTotal) },
+      { k: 2, ico: 'check', label: 'Answered Calls', value: int(answered.length) + ` <small>${pct(total ? answered.length / total * 100 : 0, 0)}</small>`, delta: deltaChip(answered.length, pAnswered) },
+      { k: 3, ico: 'clock', label: 'Avg Handling Time', value: hms(aht), delta: deltaChip(aht, pAht) },
+      { k: 4, ico: 'x', label: 'Abandoned Calls', value: int(abandoned) + ` <small>${pct(total ? abandoned / total * 100 : 0, 0)}</small>`, delta: deltaChip(abandoned, pAbandoned), invert: true },
+      { k: 5, ico: 'cart', label: 'Sales Closed', value: int(totalSales), delta: deltaChip(totalSales, pTotalSales) },
+      { k: 6, ico: 'layers', label: 'RGUs Sold', value: int(rgus), delta: deltaChip(rgus, pRgus) },
+      { k: 7, ico: 'target', label: 'Conversion Rate', value: pct(conv), delta: deltaChip(conv, pConv) },
+      { k: 8, ico: 'star', label: 'Total Points', value: int(points), delta: deltaChip(points, pPoints) },
+    ];
+    $('#kpiRow').innerHTML = items.map(it => `
+      <div class="kpi kpi--${it.k}">
+        <div class="kpi__top">
+          <div class="kpi__ico">${icon(it.ico)}</div>
+          <div class="kpi__go">${icon('arrow-up-right')}</div>
+        </div>
+        <div class="kpi__label">${it.label}</div>
+        <div class="kpi__row">
+          <div class="kpi__value">${it.value}</div>
+          ${it.delta}
+        </div>
+      </div>`).join('');
+  }
+
+  function renderSalesKpis(sales, pSales) {
+    const wrap = $('#salesTiles'); if (!wrap) return;
+    const byProvider = groupCount(sales, s => s.provider || 'Unknown');
+    const topProvider = Object.entries(byProvider).sort((a, b) => b[1] - a[1])[0];
+    const proInstall = sales.filter(s => s.install === 'Pro Install').length;
+    const mailOut = sales.filter(s => s.install === 'Mail Out').length;
+    const avgPts = sales.length ? sales.reduce((a, s) => a + (s.total || 0), 0) / sales.length : 0;
+    const items = [
+      { label: 'Top Provider', value: topProvider ? topProvider[0] : '—', hint: topProvider ? `${topProvider[1]} sales` : '' },
+      { label: 'Pro Install', value: int(proInstall), hint: pct(sales.length ? proInstall / sales.length * 100 : 0) + ' of sales' },
+      { label: 'Mail Out', value: int(mailOut), hint: pct(sales.length ? mailOut / sales.length * 100 : 0) + ' of sales' },
+      { label: 'Avg Points / Sale', value: avgPts.toFixed(1), hint: 'reward points' },
+    ];
+    wrap.innerHTML = items.map(it => `<div class="tile"><div class="tile__label">${it.label}</div><div class="tile__value">${it.value}</div><div class="tile__hint">${it.hint}</div></div>`).join('');
+  }
+
+  function groupCount(arr, keyFn) {
+    const o = {};
+    arr.forEach(x => { const k = keyFn(x); if (!k) return; o[k] = (o[k] || 0) + 1; });
+    return o;
+  }
+
+  // ---------------- Service level ring ----------------
+  function renderServiceLevel(calls) {
+    const total = calls.length || 1;
+    const answered = calls.filter(c => c.result === 'Answered').length;
+    const abandoned = calls.filter(c => c.result === 'Abandoned').length;
+    const overflow = calls.filter(c => c.result.startsWith('Overflow')).length;
+    const stranded = calls.filter(c => c.result.startsWith('Stranded')).length;
+    const pAns = answered / total * 100, pAban = abandoned / total * 100, pOver = overflow / total * 100, pStr = stranded / total * 100;
+    Charts.radialRings($('#slChart'), {
+      centerLabel: 'Total calls', centerValue: shortNum(calls.length),
+      rings: [
+        { pct: pAns, color: COLORS.green, segments: 26 },
+        { pct: pOver, color: COLORS.amber, segments: 22 },
+        { pct: pStr, color: COLORS.violet, segments: 18 },
+      ],
+    });
+    $('#slLegend').innerHTML = [
+      ['Answered', pAns, COLORS.green], ['Overflow', pOver, COLORS.amber],
+      ['Stranded', pStr, COLORS.violet], ['Abandoned', pAban, COLORS.rose],
+    ].map(([l, v, c]) => `<div class="sl__item"><span class="sl__dot" style="background:${c}"></span><div><div class="sl__num">${v.toFixed(0)}%</div><div class="sl__lbl">${l} calls</div></div></div>`).join('');
+  }
+
+  function shortNum(n) {
+    if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+    return String(n);
+  }
+
+  // ---------------- Result breakdown bars ("First Call" style) ----------------
+  const RESULT_SHORT = {
+    'Answered': 'Answered', 'Abandoned': 'Abandoned', 'Overflow - Time': 'Overflow',
+    'Stranded - Unavailable': 'No agent free', 'Stranded': 'Stranded', 'Transferred': 'Transferred', 'Escaped': 'Escaped',
+  };
+  function renderResultBars(calls) {
+    const results = DataEngine.distinctResults();
+    const counts = results.map(r => calls.filter(c => c.result === r).length);
+    const total = calls.length || 1;
+    const pctVals = counts.map(c => c / total * 100);
+    const maxIdx = pctVals.indexOf(Math.max(...pctVals));
+    Charts.barChart($('#resultChart'), {
+      labels: results.map(r => RESULT_SHORT[r] || r),
+      series: [{ values: pctVals, color: 'var(--amber-pale)', perBarColor: i => i === maxIdx ? COLORS.green : 'var(--amber-pale)' }],
+      format: v => v.toFixed(0) + '%', height: 260,
+    });
+  }
+
+  // ---------------- Trend line (calls per bucket) ----------------
+  function bucketKey(dt, granularity) {
+    if (granularity === 'daily') return DataEngine.fmtDate(dt);
+    if (granularity === 'monthly') return dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0');
+    // weekly: ISO-ish week start (Sunday)
+    const d = new Date(dt);
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+    return DataEngine.fmtDate(d);
+  }
+  function bucketLabel(key, granularity) {
+    if (granularity === 'monthly') {
+      const [y, m] = key.split('-');
+      return new Date(Date.UTC(+y, +m - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+    }
+    const d = new Date(key + 'T00:00:00Z');
+    return granularity === 'weekly' ? DataEngine.fmtDateShort(d) : DataEngine.fmtDateShort(d);
+  }
+
+  function renderTrend(calls) {
+    const g = state.granularity;
+    const buckets = new Map();
+    calls.forEach(c => {
+      const k = bucketKey(c.date, g);
+      if (!buckets.has(k)) buckets.set(k, { total: 0, answered: 0, abandoned: 0 });
+      const b = buckets.get(k); b.total++; if (c.result === 'Answered') b.answered++; if (c.result === 'Abandoned') b.abandoned++;
+    });
+    const keys = Array.from(buckets.keys()).sort();
+    const labels = keys.map(k => bucketLabel(k, g));
+    const answered = keys.map(k => buckets.get(k).answered);
+    const abandoned = keys.map(k => buckets.get(k).abandoned);
+    const total = keys.map(k => buckets.get(k).total);
+
+    const series = state.trendMetric === 'volume'
+      ? [{ name: 'Total calls', values: total, color: COLORS.violet }]
+      : [{ name: 'Answered', values: answered, color: COLORS.green }, { name: 'Abandoned', values: abandoned, color: COLORS.rose, dash: true, area: false }];
+
+    Charts.lineChart($('#trendChart'), { labels, series, height: 260 });
+    $('#trendLegend').innerHTML = series.map(s => `<span><i style="background:${s.color}${s.dash ? ';border-radius:2px' : ''}"></i>${s.name}</span>`).join('');
+  }
+
+  // ---------------- Result cluster bubbles ----------------
+  function renderResultCluster(calls) {
+    const total = calls.length || 1;
+    const answered = calls.filter(c => c.result === 'Answered').length;
+    const abandoned = calls.filter(c => c.result === 'Abandoned').length;
+    const other = total - answered - abandoned;
+    const data = [
+      { label: 'Answered', value: answered, color: COLORS.green },
+      { label: 'Overflow / Stranded', value: other, color: COLORS.violet },
+      { label: 'Abandoned', value: abandoned, color: COLORS.magenta },
+    ].filter(d => d.value > 0);
+    Charts.bubbleCluster($('#clusterChart'), { data, size: 260 });
+    $('#clusterLegend').innerHTML = data.map(d => `<span><i style="background:${d.color}"></i>${d.label} <b>${pct(d.value / total * 100, 0)}</b></span>`).join('');
+  }
+
+  // ---------------- Queue leaderboard (hbars) ----------------
+  function renderQueueLeaderboard(calls) {
+    const counts = groupCount(calls, c => c.queue);
+    const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const max = rows.length ? rows[0][1] : 1;
+    $('#queueBars').innerHTML = rows.map(([name, v]) => `
+      <button class="hbar" data-queue="${escapeAttr(name)}">
+        <span class="hbar__name" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
+        <span class="hbar__track"><i style="width:${(v / max * 100).toFixed(1)}%"></i></span>
+        <span class="hbar__val">${int(v)}</span>
+      </button>`).join('') || emptyRow();
+    $$('#queueBars .hbar').forEach(b => b.addEventListener('click', () => toggleFilterValue('queues', b.dataset.queue)));
+  }
+
+  // ---------------- Agent table ----------------
+  function computeAgentRows(calls) {
+    const map = new Map();
+    calls.forEach(c => {
+      if (!c.agent) return;
+      if (!map.has(c.agent)) map.set(c.agent, { agent: c.agent, calls: 0, answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0 });
+      const r = map.get(c.agent); r.calls++;
+      if (c.result === 'Answered') { r.answered++; r.talk += c.talk; r.hold += c.hold; r.wrap += c.wrap; r.talkN++; }
+      if (c.result === 'Abandoned') r.abandoned++;
+    });
+    return Array.from(map.values()).map(r => ({
+      ...r,
+      aht: r.talkN ? (r.talk + r.hold + r.wrap) / r.talkN : 0,
+      avgTalk: r.talkN ? r.talk / r.talkN : 0,
+      avgHold: r.talkN ? r.hold / r.talkN : 0,
+      avgWrap: r.talkN ? r.wrap / r.talkN : 0,
+      share: 0,
+    }));
+  }
+
+  function renderAgentTable(calls) {
+    let rows = computeAgentRows(calls);
+    const totalHandled = rows.reduce((a, r) => a + r.calls, 0) || 1;
+    rows.forEach(r => r.share = r.calls / totalHandled * 100);
+    const search = state.tableSearch.agents.toLowerCase();
+    if (search) rows = rows.filter(r => r.agent.toLowerCase().includes(search));
+    const { key, dir } = state.tableSort.agents;
+    rows.sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * (dir === 'asc' ? 1 : -1));
+    renderTable('agents', rows, {
+      cols: [
+        { key: 'rank', label: '#', cls: 'rank', render: (r, i) => i + 1, sortable: false },
+        { key: 'agent', label: 'Agent', cls: 'grow' },
+        { key: 'calls', label: 'Calls Handled', cls: 'r' },
+        { key: 'share', label: 'Share of Volume', cls: 'r', render: r => barCell(r.share, Math.max(...rows.map(x => x.share), 1)) },
+        { key: 'aht', label: 'AHT', cls: 'r', render: r => hmsShort(r.aht) },
+        { key: 'avgTalk', label: 'Avg Talk', cls: 'r', render: r => hmsShort(r.avgTalk) },
+        { key: 'avgHold', label: 'Avg Hold', cls: 'r', render: r => hmsShort(r.avgHold) },
+      ],
+      empty: { title: 'No agent activity', sub: 'Try widening the date range or clearing filters.' },
+    });
+  }
+
+  function barCell(v, max) {
+    const w = Math.max(2, Math.min(100, (v / max) * 100));
+    return `<span class="cellbar"><i style="width:${w}px"></i>${v.toFixed(0)}%</span>`;
+  }
+
+  // ---------------- Sales breakdowns ----------------
+  function renderSalesByProvider(sales) {
+    const counts = groupCount(sales, s => s.provider || 'Unknown');
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const data = entries.map(([label, value], i) => ({ label, value, color: PALETTE[i % PALETTE.length] }));
+    Charts.donutChart($('#providerDonut'), { data, centerLabel: 'Sales', centerValue: int(sales.length) });
+    $('#providerList').innerHTML = data.map(d => `<div><i style="background:${d.color}"></i><span>${escapeHtml(d.label)}</span><b>${d.value}</b><small>${pct(sales.length ? d.value / sales.length * 100 : 0, 0)}</small></div>`).join('') || emptyRow();
+  }
+
+  function renderSalesByTeam(sales) {
+    const counts = groupCount(sales, s => s.team || 'Unassigned');
+    const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const max = rows.length ? rows[0][1] : 1;
+    $('#teamBars').innerHTML = rows.map(([name, v]) => `
+      <div class="hbar">
+        <span class="hbar__name" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
+        <span class="hbar__track"><i style="width:${(v / max * 100).toFixed(1)}%"></i></span>
+        <span class="hbar__val">${v}</span>
+      </div>`).join('') || emptyRow();
+  }
+
+  function renderSalesTable(sales) {
+    let rows = sales.slice();
+    const search = state.tableSearch.sales.toLowerCase();
+    if (search) rows = rows.filter(r => [r.agent, r.closer, r.provider, r.team, r.state, r.campaign].filter(Boolean).join(' ').toLowerCase().includes(search));
+    const { key, dir } = state.tableSort.sales;
+    rows.sort((a, b) => {
+      const av = a[key], bv = b[key];
+      const cmp = (av > bv ? 1 : av < bv ? -1 : 0);
+      return cmp * (dir === 'asc' ? 1 : -1);
+    });
+    renderTable('sales', rows, {
+      cols: [
+        { key: 'd', label: 'Date', render: r => DataEngine.fmtDateShort(DataEngine.dateFromNum(r.d)) },
+        { key: 'agent', label: 'Agent', cls: 'grow', render: r => r.agent || '—' },
+        { key: 'closer', label: 'Closer', render: r => r.closer || '—' },
+        { key: 'provider', label: 'Provider', render: r => r.provider || '—' },
+        { key: 'services', label: 'Service', render: r => r.services || '—' },
+        { key: 'team', label: 'Team', render: r => r.team || '—' },
+        { key: 'state', label: 'State', render: r => r.state || '—' },
+        { key: 'rgu', label: 'RGUs', cls: 'r' },
+        { key: 'total', label: 'Points', cls: 'r', render: r => (r.total || 0).toFixed(1) },
+      ],
+      empty: { title: 'No sales in range', sub: 'Sales rows will appear here once they match your filters.' },
+    });
+  }
+
+  // ---------------- Generic sortable/paged table ----------------
+  function renderTable(id, rows, { cols, empty, pageSize = 10 }) {
+    const wrap = $(`#tbl_${id}`);
+    if (!wrap) return;
+    if (!rows.length) {
+      wrap.innerHTML = `<div class="empty"><b>${empty.title}</b>${empty.sub}</div>`;
+      $(`#count_${id}`).textContent = '0 rows';
+      $(`#pager_${id}`).innerHTML = '';
+      return;
+    }
+    const page = state.tablePage[id] || 1;
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const p = Math.min(page, totalPages);
+    state.tablePage[id] = p;
+    const pageRows = rows.slice((p - 1) * pageSize, p * pageSize);
+    const sort = state.tableSort[id];
+    const thead = `<thead><tr>${cols.map(c => `<th data-key="${c.key}" ${c.sortable === false ? '' : 'class="sortable"'} ${sort.key === c.key ? `data-dir="${sort.dir}"` : ''}>${c.label}</th>`).join('')}</tr></thead>`;
+    const tbody = `<tbody>${pageRows.map((r, i) => `<tr>${cols.map(c => `<td class="${c.cls || ''}">${c.render ? c.render(r, (p - 1) * pageSize + i) : (r[c.key] ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    wrap.innerHTML = `<table class="tbl">${thead}${tbody}</table>`;
+    $(`#count_${id}`).textContent = `${int(rows.length)} row${rows.length === 1 ? '' : 's'}`;
+    $(`#pager_${id}`).innerHTML = `
+      <button ${p <= 1 ? 'disabled' : ''} data-act="prev">Prev</button>
+      <span>Page ${p} of ${totalPages}</span>
+      <button ${p >= totalPages ? 'disabled' : ''} data-act="next">Next</button>`;
+    $$('th[data-key]', wrap).forEach(th => {
+      if (th.getAttribute('class') !== 'sortable' && cols.find(c => c.key === th.dataset.key)?.sortable === false) return;
+      th.addEventListener('click', () => {
+        const k = th.dataset.key;
+        if (sort.key === k) sort.dir = sort.dir === 'asc' ? 'desc' : 'asc'; else { sort.key = k; sort.dir = 'desc'; }
+        state.tablePage[id] = 1;
+        renderAll();
+      });
+    });
+    const pager = $(`#pager_${id}`);
+    pager.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      state.tablePage[id] += b.dataset.act === 'next' ? 1 : -1;
+      renderAll();
+    }));
+  }
+
+  // ---------------- Heatmap: calls by weekday x hour ----------------
+  function renderHeatmap(calls) {
+    const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
+    calls.forEach(c => { if (c.hour >= 0 && c.hour < 24) grid[c.dow][c.hour]++; });
+    const max = Math.max(1, ...grid.flat());
+    const el2 = $('#heatmap');
+    let html = `<div class="heat" style="grid-template-columns:44px repeat(24,1fr)">`;
+    html += `<div></div>` + Array.from({ length: 24 }, (_, h) => `<div class="heat__hdr">${h}</div>`).join('');
+    DataEngine.DOW_LABELS.forEach((lbl, d) => {
+      html += `<div class="heat__lbl">${lbl}</div>`;
+      for (let h = 0; h < 24; h++) {
+        const v = grid[d][h];
+        const alpha = v / max;
+        html += `<div class="heat__cell" data-v="${v}" data-d="${lbl}" data-h="${h}" style="background:${v === 0 ? 'var(--heat-0)' : `color-mix(in srgb, var(--amber) ${Math.max(10, alpha * 100).toFixed(0)}%, var(--heat-0))`}"></div>`;
+      }
+    });
+    html += `</div>`;
+    el2.innerHTML = html;
+    $$('.heat__cell', el2).forEach(c => {
+      c.addEventListener('mousemove', evt => { Charts.showTip(evt, `<div class="t">${c.dataset.d} · ${c.dataset.h}:00</div><b>${c.dataset.v}</b> calls`); Charts.moveTip(evt); });
+      c.addEventListener('mouseleave', Charts.hideTip);
+    });
+  }
+
+  // ---------------- Data health ----------------
+  function renderDataHealth(calls, sales) {
+    const el2 = $('#dataHealth'); if (!el2) return;
+    const missingAgent = calls.filter(c => !c.agent).length;
+    const items = [
+      ['Rows in range (calls)', int(calls.length)],
+      ['Rows in range (sales)', int(sales.length)],
+      ['Calls without an agent', int(missingAgent) + ' (' + pct(calls.length ? missingAgent / calls.length * 100 : 0, 0) + ')'],
+      ['Data source', DataEngine.source === 'sample' ? 'Sample export' : 'Live Google Sheet'],
+      ['Last refreshed', DataEngine.generatedAt ? new Date(DataEngine.generatedAt).toLocaleString() : '—'],
+    ];
+    el2.innerHTML = `<dl class="kv">${items.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+  }
+
+  // ---------------- Filter UI wiring ----------------
+  function wireStaticUI() {
+    // theme
+    $('#themeToggle').addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light', true));
+
+    // date range presets
+    $$('.seg[data-group="range"] button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setActiveSeg('range', btn);
+        applyRangePreset(btn.dataset.range);
+      });
+    });
+    $('#dateStart').addEventListener('change', () => { onCustomDate(); });
+    $('#dateEnd').addEventListener('change', () => { onCustomDate(); });
+
+    // granularity for trend
+    $$('.seg[data-group="gran"] button').forEach(btn => {
+      btn.addEventListener('click', () => { setActiveSeg('gran', btn); state.granularity = btn.dataset.gran; renderTrend(DataEngine.filterCalls(currentFilter())); });
+    });
+    $$('.seg[data-group="trendMetric"] button').forEach(btn => {
+      btn.addEventListener('click', () => { setActiveSeg('trendMetric', btn); state.trendMetric = btn.dataset.metric; renderTrend(DataEngine.filterCalls(currentFilter())); });
+    });
+
+    // reset
+    $('#btnReset').addEventListener('click', resetFilters);
+
+    // export
+    $('#btnExport').addEventListener('click', exportCsv);
+
+    // table search
+    ['agents', 'queues', 'sales'].forEach(id => {
+      const inp = $(`#search_${id}`);
+      if (inp) inp.addEventListener('input', debounce(() => { state.tableSearch[id] = inp.value; state.tablePage[id] = 1; renderAll(); }, 200));
+    });
+
+    // top search
+    const topSearch = $('#topSearch');
+    topSearch.addEventListener('input', debounce(() => renderTopSearch(topSearch.value), 120));
+    topSearch.addEventListener('focus', () => renderTopSearch(topSearch.value));
+    document.addEventListener('click', evt => {
+      if (!evt.target.closest('.search')) $('#searchPanel').hidden = true;
+      if (!evt.target.closest('.dd')) $$('.dd__panel').forEach(p => p.remove());
+      if (!evt.target.closest('.rel')) $$('.pop').forEach(p => p.hidden = true);
+    });
+
+    // notif / connect popovers
+    $('#btnNotif').addEventListener('click', e => { e.stopPropagation(); togglePop('#notifPop'); });
+    $('#btnConnect').addEventListener('click', e => { e.stopPropagation(); openConnectPanel(); });
+    $('#btnConnectSave').addEventListener('click', saveFeedUrl);
+    $('#btnConnectClear').addEventListener('click', () => { localStorage.removeItem(DATA_URL_KEY); $('#connectUrl').value = ''; bootLoad(null); });
+
+    // resize: redraw charts crisp
+    window.addEventListener('resize', debounce(() => { if (DataEngine.calls.length || DataEngine.calls) renderAll(); }, 200));
+
+    // rail navigation: smooth-scroll to section + track active state
+    const railBtns = $$('.rail__btn[data-goto]');
+    railBtns.forEach(b => b.addEventListener('click', () => {
+      const target = document.getElementById(b.dataset.goto);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+    const sections = railBtns.map(b => ({ btn: b, el: document.getElementById(b.dataset.goto) })).filter(s => s.el);
+    const onScroll = debounce(() => {
+      const y = window.scrollY + 110;
+      let active = sections[0];
+      sections.forEach(s => { if (s.el.offsetTop <= y) active = s; });
+      railBtns.forEach(b => b.removeAttribute('aria-current'));
+      active.btn.setAttribute('aria-current', 'page');
+    }, 60);
+    window.addEventListener('scroll', onScroll);
+  }
+
+  function togglePop(sel) {
+    $$('.pop').forEach(p => { if (p !== $(sel)) p.hidden = true; });
+    const p = $(sel); p.hidden = !p.hidden;
+  }
+
+  function openConnectPanel() {
+    togglePop('#connectPop');
+    const cur = (window.SC_CONFIG && window.SC_CONFIG.feedUrl) || localStorage.getItem(DATA_URL_KEY) || '';
+    $('#connectUrl').value = cur;
+  }
+  function saveFeedUrl() {
+    const url = $('#connectUrl').value.trim();
+    if (!url) return;
+    localStorage.setItem(DATA_URL_KEY, url);
+    $('#connectPop').hidden = true;
+    bootLoad(url);
+  }
+
+  function setActiveSeg(group, activeBtn) {
+    $$(`.seg[data-group="${group}"] button`).forEach(b => b.setAttribute('aria-pressed', b === activeBtn ? 'true' : 'false'));
+  }
+
+  function applyRangePreset(preset) {
+    const { max } = DataEngine.bounds;
+    let start;
+    if (preset === '7d') start = new Date(max.getTime() - 6 * DataEngine.DAY);
+    else if (preset === '30d') start = new Date(max.getTime() - 29 * DataEngine.DAY);
+    else if (preset === 'mtd') start = new Date(Date.UTC(max.getUTCFullYear(), max.getUTCMonth(), 1));
+    else start = DataEngine.bounds.min;
+    state.start = start < DataEngine.bounds.min ? DataEngine.bounds.min : start;
+    state.end = max;
+    $('#dateStart').value = DataEngine.fmtDate(state.start);
+    $('#dateEnd').value = DataEngine.fmtDate(state.end);
+    renderAll();
+  }
+  function onCustomDate() {
+    const s = new Date($('#dateStart').value + 'T00:00:00Z');
+    const e = new Date($('#dateEnd').value + 'T00:00:00Z');
+    if (isNaN(s) || isNaN(e) || s > e) return;
+    state.start = s; state.end = e;
+    setActiveSeg('range', null);
+    renderAll();
+  }
+
+  function resetFilters() {
+    state.queues.clear(); state.agents.clear(); state.results.clear();
+    setupFilterDefaults();
+    setActiveSeg('range', $('.seg[data-group="range"] button[data-range="all"]'));
+    populateFilterOptions();
+    renderAll();
+  }
+
+  function toggleFilterValue(key, value) {
+    const set = state[key];
+    if (set.has(value)) set.delete(value); else set.add(value);
+    renderAll();
+  }
+
+  function updateFilterChipStates() {
+    ['queues', 'agents', 'results'].forEach(key => {
+      const btn = $(`#dd_${key}_btn`);
+      if (!btn) return;
+      const set = state[key];
+      const valEl = btn.querySelector('.val');
+      if (set.size === 0) { btn.classList.remove('is-on'); valEl.textContent = 'All'; }
+      else { btn.classList.add('is-on'); valEl.textContent = set.size === 1 ? [...set][0] : set.size + ' selected'; }
+    });
+  }
+
+  // ---------------- Multi-select dropdown ----------------
+  function buildDropdown(key, label, options, countFn) {
+    const host = $(`#dd_${key}`);
+    if (!host) return;
+    host.innerHTML = `<button class="dd__btn" id="dd_${key}_btn"><span class="lbl">${label}:</span><span class="val">All</span>${icon('chevron')}</button>`;
+    const btn = $(`#dd_${key}_btn`, host);
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      $$('.dd__panel').forEach(p => p.remove());
+      const panel = document.createElement('div');
+      panel.className = 'dd__panel';
+      panel.innerHTML = `
+        <input class="dd__search" placeholder="Search ${label.toLowerCase()}…" />
+        <div class="dd__list"></div>
+        <div class="dd__foot"><button data-act="all">Select all</button><button data-act="none">Clear</button></div>`;
+      host.appendChild(panel);
+      const list = $('.dd__list', panel);
+      function draw(filterTxt) {
+        const opts = options.filter(o => !filterTxt || o.toLowerCase().includes(filterTxt.toLowerCase()));
+        list.innerHTML = opts.length ? opts.map(o => `
+          <label class="dd__opt"><input type="checkbox" value="${escapeAttr(o)}" ${state[key].has(o) ? 'checked' : ''}/><span>${escapeHtml(o)}</span><small>${countFn(o)}</small></label>`).join('')
+          : `<div class="dd__empty">No matches</div>`;
+        $$('input', list).forEach(cb => cb.addEventListener('change', () => {
+          if (cb.checked) state[key].add(cb.value); else state[key].delete(cb.value);
+          renderAll();
+        }));
+      }
+      draw('');
+      $('.dd__search', panel).addEventListener('input', e2 => draw(e2.target.value));
+      $('.dd__search', panel).focus();
+      panel.querySelector('[data-act="all"]').addEventListener('click', () => { options.forEach(o => state[key].add(o)); draw($('.dd__search', panel).value); renderAll(); });
+      panel.querySelector('[data-act="none"]').addEventListener('click', () => { state[key].clear(); draw($('.dd__search', panel).value); renderAll(); });
+      panel.addEventListener('click', e2 => e2.stopPropagation());
+    });
+  }
+
+  // ---------------- Top search (global) ----------------
+  function renderTopSearch(q) {
+    const panel = $('#searchPanel');
+    if (!q || q.trim().length < 1) { panel.hidden = true; return; }
+    const ql = q.toLowerCase();
+    const agents = DataEngine.distinctAgents().filter(a => a.toLowerCase().includes(ql)).slice(0, 6);
+    const queues = DataEngine.distinctQueues().filter(a => a.toLowerCase().includes(ql)).slice(0, 6);
+    if (!agents.length && !queues.length) { panel.innerHTML = `<div class="dd__empty">No matches for “${escapeHtml(q)}”</div>`; panel.hidden = false; return; }
+    let html = '';
+    if (agents.length) html += `<div class="search__grp">Agents</div>` + agents.map(a => `<button class="search__item" data-type="agents" data-val="${escapeAttr(a)}">${escapeHtml(a)} <small>${DataEngine.calls.filter(c => c.agent === a).length} calls</small></button>`).join('');
+    if (queues.length) html += `<div class="search__grp">Queues</div>` + queues.map(a => `<button class="search__item" data-type="queues" data-val="${escapeAttr(a)}">${escapeHtml(a)} <small>${DataEngine.calls.filter(c => c.queue === a).length} calls</small></button>`).join('');
+    panel.innerHTML = html; panel.hidden = false;
+    $$('.search__item', panel).forEach(b => b.addEventListener('click', () => {
+      state[b.dataset.type].add(b.dataset.val);
+      $('#topSearch').value = ''; panel.hidden = true; renderAll();
+    }));
+  }
+
+  // ---------------- Export ----------------
+  function exportCsv() {
+    const f = currentFilter();
+    const calls = DataEngine.filterCalls(f);
+    const rows = [['Date', 'Hour', 'Queue', 'Agent', 'Result', 'Wait(s)', 'Talk(s)', 'Hold(s)', 'Wrap(s)', 'Bounces']];
+    calls.forEach(c => rows.push([c.dateStr, c.hour, c.queue, c.agent || '', c.result, c.wait, c.talk, c.hold, c.wrap, c.bounces]));
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `simply-connect-calls_${DataEngine.fmtDate(state.start)}_to_${DataEngine.fmtDate(state.end)}.csv`;
+    a.click();
+  }
+
+  // ---------------- Theme ----------------
+  function applyTheme(theme, persist) {
+    state.theme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    $('#themeToggle') && ($('#themeToggle').innerHTML = icon(theme === 'light' ? 'moon' : 'sun'));
+    if (persist) { localStorage.setItem('sc_theme', theme); renderAll(); }
+  }
+
+  // ---------------- Utils ----------------
+  function emptyRow() { return `<div class="empty" style="padding:18px 0"><b>No data</b>Nothing matches the current filters.</div>`; }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function escapeAttr(s) { return escapeHtml(s); }
+  function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+  function icon(name) {
+    const M = {
+      phone: '<path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.5.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.9 21 3 13.1 3 3.9c0-.6.4-1 1-1h3.4c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.5.1.4 0 .8-.2 1L6.6 10.8z"/>',
+      check: '<path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
+      clock: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      x: '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+      cart: '<circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M3 4h2l2.4 11.6a1.5 1.5 0 0 0 1.5 1.2h7.8a1.5 1.5 0 0 0 1.5-1.2L20 8H6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      layers: '<path d="M12 2 2 7l10 5 10-5-10-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M2 12l10 5 10-5M2 17l10 5 10-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+      target: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
+      star: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.6 6.1 20.5l1.2-6.5-4.8-4.6 6.6-.9L12 2.5z" fill="currentColor"/>',
+      'arrow-up-right': '<path d="M7 17 17 7M9 7h8v8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+      search: '<circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      share: '<circle cx="18" cy="5" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="6" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="19" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.2 10.8 15.8 6.2M8.2 13.2l7.6 4.6" stroke="currentColor" stroke-width="1.8"/>',
+      refresh: '<path d="M21 12a9 9 0 1 1-3-6.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M21 3v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      bell: '<path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="2"/>',
+      grid: '<rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/>',
+      chart: '<path d="M4 20V10M12 20V4M20 20v-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
+      users: '<circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c1-3.6 3.6-5.5 6.5-5.5s5.5 1.9 6.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16 4.5c1.7.4 3 2 3 3.9 0 1.9-1.3 3.4-3 3.9M20 20c-.6-2.4-1.8-4.1-3.4-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      trend: '<path d="M3 17l6-6 4 4 8-8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h6v6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+      doc: '<path d="M7 3h7l5 5v13H7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+      calendar: '<rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      tag: '<path d="M3 12.5 12.5 3H20v7.5L10.5 20 3 12.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16" cy="7" r="1.3" fill="currentColor"/>',
+      gear: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M19 5l-2 2M7 17l-2 2M19 19l-2-2M7 7 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" fill="currentColor"/>',
+      sun: '<circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      chevron: '<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      alert: '<path d="M12 3 2 20h20L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+      info: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8h.01M11.5 11h1v6h-1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      plug: '<path d="M9 3v5M15 3v5M6 8h12l-1 4a5 5 0 0 1-10 0L6 8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 17v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    };
+    return `<svg viewBox="0 0 24 24" fill="none">${M[name] || M.info}</svg>`;
+  }
+  window.__scIcon = icon;
+})();

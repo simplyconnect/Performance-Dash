@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Simply Connect · Performance Dashboard</title>
+<meta name="description" content="Daily, weekly and monthly call center and sales performance for Simply Connect." />
+<link rel="icon" href="assets/img/logo-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+
+<!-- Boot loader -->
+<div class="boot" id="boot">
+  <div class="boot__box">
+    <img class="full" src="assets/img/logo.png" alt="Simply Connect" />
+    <div class="boot__bar"><i></i></div>
+    <div class="boot__msg">Loading performance data…</div>
+  </div>
+</div>
+
+<div id="tip" role="status" aria-hidden="true"></div>
+
+<div class="app">
+  <!-- ================= Sidebar rail ================= -->
+  <nav class="rail" aria-label="Primary">
+    <div class="rail__logo"><img src="assets/img/logo-icon.png" alt="" /></div>
+    <div class="rail__nav">
+      <button class="rail__btn" data-goto="top" aria-current="page" aria-label="Overview"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/></svg><span class="tipl">Overview</span></button>
+      <button class="rail__btn" data-goto="sec-calls" aria-label="Calls"><svg viewBox="0 0 24 24" fill="none"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.5.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.9 21 3 13.1 3 3.9c0-.6.4-1 1-1h3.4c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.5.1.4 0 .8-.2 1L6.6 10.8z" fill="currentColor"/></svg><span class="tipl">Calls</span></button>
+      <button class="rail__btn" data-goto="sec-sales" aria-label="Sales"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M12 20V4M20 20v-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span class="tipl">Sales</span></button>
+      <button class="rail__btn" data-goto="sec-agents" aria-label="Agents"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c1-3.6 3.6-5.5 6.5-5.5s5.5 1.9 6.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16 4.5c1.7.4 3 2 3 3.9 0 1.9-1.3 3.4-3 3.9M20 20c-.6-2.4-1.8-4.1-3.4-5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="tipl">Agents</span></button>
+      <button class="rail__btn" data-goto="sec-health" aria-label="Reports"><svg viewBox="0 0 24 24" fill="none"><path d="M7 3h7l5 5v13H7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="tipl">Reports</span></button>
+      <button class="rail__btn" data-goto="sec-heatmap" aria-label="Schedule"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="tipl">Schedule</span></button>
+      <button class="rail__btn" data-goto="sec-queues" aria-label="Campaigns"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12.5 12.5 3H20v7.5L10.5 20 3 12.5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16" cy="7" r="1.3" fill="currentColor"/></svg><span class="tipl">Campaigns</span></button>
+    </div>
+    <button class="rail__btn rail__theme" id="themeToggle" aria-label="Toggle dark mode">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" fill="currentColor"/></svg>
+    </button>
+  </nav>
+
+  <div class="main">
+    <!-- ================= Top bar ================= -->
+    <header class="topbar">
+      <h1 class="topbar__title">Performance Dashboard</h1>
+      <span class="topbar__sub">Calls &amp; Sales · Simply Connect</span>
+      <img class="topbar__logo" src="assets/img/logo.png" alt="Simply Connect" />
+      <div class="topbar__spacer"></div>
+
+      <div class="search rel">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="topSearch" type="text" placeholder="Search agent or queue…" autocomplete="off" />
+        <div class="search__panel" id="searchPanel" hidden></div>
+      </div>
+
+      <div class="rel">
+        <button class="iconbtn" id="btnConnect" title="Connect live data" aria-label="Connect live data">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M9 3v5M15 3v5M6 8h12l-1 4a5 5 0 0 1-10 0L6 8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 17v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div class="pop" id="connectPop" hidden>
+          <h3>Connect your Google Sheet</h3>
+          <p class="connectPop__hint">Paste the Apps Script Web App URL (see <code>apps-script/README.md</code>). The dashboard will refresh straight from your sheet — no re-upload needed.</p>
+          <input class="dd__search connectPop__input" id="connectUrl" placeholder="https://script.google.com/macros/s/…/exec" />
+          <div class="connectPop__actions">
+            <button class="btn btn--amber" id="btnConnectSave">Save &amp; load</button>
+            <button class="btn btn--ghost" id="btnConnectClear">Use sample</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rel">
+        <button class="iconbtn" id="btnNotif" title="Notifications" aria-label="Notifications">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <span class="dot"></span>
+        </button>
+        <div class="pop" id="notifPop" hidden>
+          <h3>Alerts</h3>
+          <ul>
+            <li><span class="tag bad"></span><div><b>Abandoned rate above 12%</b><br/>Fiber Opp queue, last 24h.</div></li>
+            <li><span class="tag"></span><div><b>New sync</b><br/>Google Sheet refreshed automatically.</div></li>
+            <li><span class="tag good"></span><div><b>Answer rate up 6%</b><br/>Compared with the previous period.</div></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="avatar" title="Dashboard viewer">SC</div>
+    </header>
+
+    <!-- ================= Filter bar ================= -->
+    <div class="filters">
+      <div class="filters__row">
+        <span class="filters__label">Range</span>
+        <div class="seg" data-group="range">
+          <button data-range="7d" aria-pressed="false">7D</button>
+          <button data-range="30d" aria-pressed="false">30D</button>
+          <button data-range="mtd" aria-pressed="false">MTD</button>
+          <button data-range="all" aria-pressed="true">All</button>
+        </div>
+        <div class="dates">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input type="date" id="dateStart" aria-label="Start date" />
+          <i>–</i>
+          <input type="date" id="dateEnd" aria-label="End date" />
+        </div>
+
+        <div class="dd" id="dd_queues"></div>
+        <div class="dd" id="dd_agents"></div>
+        <div class="dd" id="dd_results"></div>
+
+        <div class="filters__grow"></div>
+        <button class="btn btn--ghost" id="btnReset">Reset</button>
+        <button class="btn" id="btnExport">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12M7 10l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Export CSV
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= Stage ================= -->
+    <main class="stage" id="top">
+      <div id="dataBanner"></div>
+
+      <!-- KPI row -->
+      <section class="kpis" id="kpiRow" aria-label="Key metrics"></section>
+
+      <!-- Service level + result breakdown -->
+      <div class="grid">
+        <div class="card c4">
+          <div class="card__head">
+            <div><div class="card__title">Service Level</div><div class="card__sub">Result mix for the selected range</div></div>
+          </div>
+          <div class="sl">
+            <div class="sl__legend" id="slLegend"></div>
+            <div class="chart" id="slChart"></div>
+          </div>
+        </div>
+
+        <div class="card c8">
+          <div class="card__head">
+            <div><div class="card__title">Call Result Breakdown</div><div class="card__sub">Share of calls by outcome — tallest bar highlighted</div></div>
+          </div>
+          <div class="chart" id="resultChart"></div>
+        </div>
+      </div>
+
+      <!-- Trend + cluster -->
+      <div class="grid" id="sec-calls">
+        <div class="card c8">
+          <div class="card__head">
+            <div><div class="card__title">Call Volume Trend</div><div class="card__sub trendLegend" id="trendLegend"></div></div>
+            <div class="card__tools">
+              <div class="seg seg--sm" data-group="trendMetric">
+                <button data-metric="volume" aria-pressed="true">Volume</button>
+                <button data-metric="result" aria-pressed="false">Answered vs Abandoned</button>
+              </div>
+              <div class="seg seg--sm" data-group="gran">
+                <button data-gran="daily" aria-pressed="false">Daily</button>
+                <button data-gran="weekly" aria-pressed="true">Weekly</button>
+                <button data-gran="monthly" aria-pressed="false">Monthly</button>
+              </div>
+            </div>
+          </div>
+          <div class="chart" id="trendChart"></div>
+        </div>
+
+        <div class="card c4">
+          <div class="card__head">
+            <div><div class="card__title">Call Outcome Mix</div><div class="card__sub">Answered vs everything else</div></div>
+          </div>
+          <div class="chart" id="clusterChart"></div>
+          <div class="legend clusterLegend" id="clusterLegend"></div>
+        </div>
+      </div>
+
+      <!-- Queue leaderboard + heatmap -->
+      <div class="grid">
+        <div class="card c5" id="sec-queues">
+          <div class="card__head">
+            <div><div class="card__title">Top Queues by Volume</div><div class="card__sub">Click a bar to filter the dashboard</div></div>
+          </div>
+          <div class="hbars" id="queueBars"></div>
+        </div>
+
+        <div class="card c7" id="sec-heatmap">
+          <div class="card__head">
+            <div><div class="card__title">Call Activity Heatmap</div><div class="card__sub">Volume by day of week &amp; hour (site local time)</div></div>
+          </div>
+          <div class="heatScroll">
+            <div id="heatmap" class="heatInner"></div>
+          </div>
+          <div class="heat__scale"><span>Fewer</span><i></i><span>More</span></div>
+        </div>
+      </div>
+
+      <!-- Agent table -->
+      <div class="grid">
+        <div class="card c12" id="sec-agents">
+          <div class="card__head">
+            <div><div class="card__title">Agent Performance</div><div class="card__sub">Answered calls per agent, with handling time — the source sheet only logs an agent on answered calls</div></div>
+          </div>
+          <div class="tbl-tools">
+            <input class="tbl-search" id="search_agents" placeholder="Search agent…" />
+            <span class="tbl-count" id="count_agents"></span>
+          </div>
+          <div class="tbl-wrap" id="tbl_agents"></div>
+          <div class="pager" id="pager_agents"></div>
+        </div>
+      </div>
+
+      <!-- Sales section -->
+      <section aria-label="Sales performance" id="sec-sales" class="salesSection">
+        <h2 class="salesSection__title">Sales Performance</h2>
+        <div class="tiles" id="salesTiles"></div>
+
+        <div class="grid">
+          <div class="card c5">
+            <div class="card__head">
+              <div><div class="card__title">Sales by Provider</div><div class="card__sub">Share of closed sales</div></div>
+            </div>
+            <div class="donutbox">
+              <div class="chart" id="providerDonut"></div>
+              <div class="dlist" id="providerList"></div>
+            </div>
+          </div>
+
+          <div class="card c7">
+            <div class="card__head">
+              <div><div class="card__title">Sales by Team</div><div class="card__sub">Closed sales grouped by selling team</div></div>
+            </div>
+            <div class="hbars" id="teamBars"></div>
+          </div>
+        </div>
+
+        <div class="card c12">
+          <div class="card__head">
+            <div><div class="card__title">Sales Log</div><div class="card__sub">Non-personal sale details for the selected range</div></div>
+          </div>
+          <div class="tbl-tools">
+            <input class="tbl-search" id="search_sales" placeholder="Search provider, team, agent…" />
+            <span class="tbl-count" id="count_sales"></span>
+          </div>
+          <div class="tbl-wrap" id="tbl_sales"></div>
+          <div class="pager" id="pager_sales"></div>
+        </div>
+      </section>
+
+      <!-- Data health -->
+      <div class="grid">
+        <div class="card c12" id="sec-health">
+          <div class="card__head">
+            <div><div class="card__title">Data &amp; Sync Health</div><div class="card__sub">Where this dashboard's numbers come from</div></div>
+          </div>
+          <div id="dataHealth"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/charts.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
