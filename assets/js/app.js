@@ -5,8 +5,7 @@
   'use strict';
 
   const DATA_URL_KEY = 'sc_dashboard_feed_url';
-  const DEFAULT_FEED = null; // set via config.js (window.SC_CONFIG.feedUrl) or left blank for sample data
-  const SAMPLE_URL = 'data/sample-data.json';
+  const DEFAULT_FEED = null; // set via config.js (window.SC_CONFIG.feedUrl)
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -55,24 +54,21 @@
 
   async function bootLoad(feedUrl) {
     showBoot(true);
+    if (!feedUrl) {
+      showNotConnected();
+      clearStage();
+      showBoot(false);
+      return;
+    }
     try {
-      if (feedUrl) {
-        await DataEngine.load(feedUrl);
-        showSourceBanner('live', feedUrl);
-      } else {
-        await DataEngine.load(SAMPLE_URL);
-        showSourceBanner('sample');
-      }
+      await DataEngine.load(feedUrl);
+      showSourceBanner('live', feedUrl);
     } catch (err) {
       console.error(err);
-      try {
-        await DataEngine.load(SAMPLE_URL);
-        showSourceBanner('error-fallback', feedUrl, err.message);
-      } catch (err2) {
-        showFatal(err2.message);
-        showBoot(false);
-        return;
-      }
+      showFatal(err.message, feedUrl);
+      clearStage();
+      showBoot(false);
+      return;
     }
     setupFilterDefaults();
     populateFilterOptions();
@@ -85,26 +81,38 @@
     if (!b) return;
     if (on) { b.classList.remove('is-off'); } else { setTimeout(() => b.classList.add('is-off'), 250); }
   }
-  function showFatal(msg) {
+
+  // Wipe stale numbers off the page while there's no valid live data loaded.
+  function clearStage() {
+    ['#kpiRow', '#salesTiles', '#queueBars', '#teamBars', '#heatmap', '#dataHealth'].forEach(sel => { const el2 = $(sel); if (el2) el2.innerHTML = ''; });
+    ['agents', 'sales'].forEach(id => { const w = $(`#tbl_${id}`); if (w) w.innerHTML = ''; const c = $(`#count_${id}`); if (c) c.textContent = ''; const p = $(`#pager_${id}`); if (p) p.innerHTML = ''; });
+  }
+
+  function showNotConnected() {
+    $('#dataBanner').innerHTML = `
+      <div class="banner">
+        ${icon('plug')}
+        <div><b>No live data connected yet.</b> Paste your Google Apps Script Web App URL to pull real numbers from your spreadsheet — nothing is shown until it's connected.</div>
+        <button class="btn btn--amber" id="btnConnectNow">${icon('plug')} Connect data</button>
+      </div>`;
+    const b = $('#btnConnectNow'); if (b) b.addEventListener('click', () => openConnectPanel());
+  }
+
+  function showFatal(msg, url) {
     $('#dataBanner').innerHTML = `
       <div class="banner banner--err">
         ${icon('alert')}
-        <div><b>Couldn't load any data.</b> ${escapeHtml(msg)}. Check the connection settings and reload.</div>
+        <div><b>Couldn't load live data.</b> ${escapeHtml(msg)}. Check the Apps Script deployment (access must be "Anyone with the link") and your sheet's tab/column names, then retry.</div>
+        <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button>
       </div>`;
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url));
   }
-  function showSourceBanner(kind, url, err) {
+
+  function showSourceBanner(kind, url) {
     const el2 = $('#dataBanner');
-    if (kind === 'live') {
-      el2.innerHTML = `<div class="banner banner--ok">${icon('check')}<div><b>Connected.</b> Live data from your Google Sheet${DataEngine.generatedAt ? ' · updated ' + timeAgo(DataEngine.generatedAt) : ''}.</div>
-        <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Refresh</button></div>`;
-    } else if (kind === 'sample') {
-      el2.innerHTML = `<div class="banner">${icon('info')}<div><b>Showing sample data</b> from your uploaded file (${DataEngine.meta ? int(DataEngine.meta.callRows) + ' calls · ' + int(DataEngine.meta.salesRows) + ' sales' : ''}). Connect your live Google Sheet in <button class="btn btn--ghost" id="openConnect" style="display:inline-flex;height:24px;padding:0 10px;vertical-align:-2px">Connect data</button> to replace it.</div></div>`;
-    } else {
-      el2.innerHTML = `<div class="banner banner--err">${icon('alert')}<div><b>Couldn't reach the live feed</b> (${escapeHtml(err || '')}) — showing sample data instead.</div>
-        <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button></div>`;
-    }
+    el2.innerHTML = `<div class="banner banner--ok">${icon('check')}<div><b>Connected.</b> Live data from your Google Sheet${DataEngine.generatedAt ? ' · updated ' + timeAgo(DataEngine.generatedAt) : ''}.</div>
+      <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Refresh</button></div>`;
     const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad((window.SC_CONFIG && window.SC_CONFIG.feedUrl) || localStorage.getItem(DATA_URL_KEY)));
-    const oc = $('#openConnect'); if (oc) oc.addEventListener('click', () => openConnectPanel());
   }
   function timeAgo(iso) {
     try {
@@ -368,6 +376,22 @@
     }));
   }
 
+  const AGENT_AVA_COLORS = ['#5240D6', '#3F49B8', '#B23FA8', '#E5484D', '#FDAC00', '#2FA352', '#2B83C6', '#9A6A3A'];
+  function avaColor(name) {
+    let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return AGENT_AVA_COLORS[h % AGENT_AVA_COLORS.length];
+  }
+  function initials(name) {
+    const parts = String(name).trim().split(/\s+/);
+    return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
+  }
+  function rankBadge(i) {
+    if (i === 0) return `<span class="rankmedal rankmedal--1" title="#1">🥇</span>`;
+    if (i === 1) return `<span class="rankmedal rankmedal--2" title="#2">🥈</span>`;
+    if (i === 2) return `<span class="rankmedal rankmedal--3" title="#3">🥉</span>`;
+    return `<span class="rankmedal">${i + 1}</span>`;
+  }
+
   function renderAgentTable(calls) {
     let rows = computeAgentRows(calls);
     const totalHandled = rows.reduce((a, r) => a + r.calls, 0) || 1;
@@ -376,12 +400,19 @@
     if (search) rows = rows.filter(r => r.agent.toLowerCase().includes(search));
     const { key, dir } = state.tableSort.agents;
     rows.sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * (dir === 'asc' ? 1 : -1));
+    rows = rows.slice(0, 10); // Top 10 agents only
+    const maxShare = Math.max(...rows.map(x => x.share), 1);
     renderTable('agents', rows, {
+      pageSize: 10,
       cols: [
-        { key: 'rank', label: '#', cls: 'rank', render: (r, i) => i + 1, sortable: false },
-        { key: 'agent', label: 'Agent', cls: 'grow' },
+        { key: 'rank', label: '#', cls: 'rank', render: (r, i) => rankBadge(i), sortable: false },
+        { key: 'agent', label: 'Agent', cls: 'grow', render: r => `
+            <span class="agentcell">
+              <span class="agentava" style="background:${avaColor(r.agent)}">${escapeHtml(initials(r.agent))}</span>
+              <span>${escapeHtml(r.agent)}</span>
+            </span>` },
         { key: 'calls', label: 'Calls Handled', cls: 'r' },
-        { key: 'share', label: 'Share of Volume', cls: 'r', render: r => barCell(r.share, Math.max(...rows.map(x => x.share), 1)) },
+        { key: 'share', label: 'Share of Volume', cls: 'r', render: r => barCell(r.share, maxShare) },
         { key: 'aht', label: 'AHT', cls: 'r', render: r => hmsShort(r.aht) },
         { key: 'avgTalk', label: 'Avg Talk', cls: 'r', render: r => hmsShort(r.avgTalk) },
         { key: 'avgHold', label: 'Avg Hold', cls: 'r', render: r => hmsShort(r.avgHold) },
@@ -569,7 +600,7 @@
     $('#btnNotif').addEventListener('click', e => { e.stopPropagation(); togglePop('#notifPop'); });
     $('#btnConnect').addEventListener('click', e => { e.stopPropagation(); openConnectPanel(); });
     $('#btnConnectSave').addEventListener('click', saveFeedUrl);
-    $('#btnConnectClear').addEventListener('click', () => { localStorage.removeItem(DATA_URL_KEY); $('#connectUrl').value = ''; bootLoad(null); });
+    $('#btnConnectClear').addEventListener('click', () => { localStorage.removeItem(DATA_URL_KEY); $('#connectUrl').value = ''; $('#connectPop').hidden = true; bootLoad((window.SC_CONFIG && window.SC_CONFIG.feedUrl) || null); });
 
     // resize: redraw charts crisp
     window.addEventListener('resize', debounce(() => { if (DataEngine.calls.length || DataEngine.calls) renderAll(); }, 200));
