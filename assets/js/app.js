@@ -29,6 +29,12 @@
   };
   const PALETTE = [COLORS.violet, COLORS.amber, COLORS.magenta, COLORS.green, COLORS.peri, COLORS.rose, COLORS.blue, COLORS.brown, COLORS.slate];
 
+  // Tracks whether a live feed has ever loaded successfully. Several UI
+  // events (window resize, theme toggle) can fire before/after a failed
+  // load — without this guard they call renderAll() while state.start/end
+  // are still null, which crashes (see prevPeriod/getTime in data.js).
+  let dataLoaded = false;
+
   // ---------------- State ----------------
   const state = {
     granularity: 'weekly', // daily | weekly | monthly
@@ -54,6 +60,7 @@
 
   async function bootLoad(feedUrl) {
     showBoot(true);
+    dataLoaded = false;
     if (!feedUrl) {
       showNotConnected();
       clearStage();
@@ -70,6 +77,7 @@
       showBoot(false);
       return;
     }
+    dataLoaded = true;
     setupFilterDefaults();
     populateFilterOptions();
     renderAll();
@@ -603,7 +611,7 @@
     $('#btnConnectClear').addEventListener('click', () => { localStorage.removeItem(DATA_URL_KEY); $('#connectUrl').value = ''; $('#connectPop').hidden = true; bootLoad((window.SC_CONFIG && window.SC_CONFIG.feedUrl) || null); });
 
     // resize: redraw charts crisp
-    window.addEventListener('resize', debounce(() => { if (DataEngine.calls.length || DataEngine.calls) renderAll(); }, 200));
+    window.addEventListener('resize', debounce(() => { if (dataLoaded) renderAll(); }, 200));
 
     // rail navigation: smooth-scroll to section + track active state
     const railBtns = $$('.rail__btn[data-goto]');
@@ -764,7 +772,7 @@
     state.theme = theme;
     document.documentElement.setAttribute('data-theme', theme);
     $('#themeToggle') && ($('#themeToggle').innerHTML = icon(theme === 'light' ? 'moon' : 'sun'));
-    if (persist) { localStorage.setItem('sc_theme', theme); renderAll(); }
+    if (persist) { localStorage.setItem('sc_theme', theme); if (dataLoaded) renderAll(); }
   }
 
   // ---------------- Utils ----------------
