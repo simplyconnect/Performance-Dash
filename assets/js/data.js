@@ -56,8 +56,11 @@ const DataEngine = (() => {
   function distinctResults() { return Array.from(new Set(calls.map(c => c.result))).sort(); }
   function distinctTeams() { return Array.from(new Set(sales.map(s => s.team).filter(Boolean))).sort(); }
   function distinctProviders() { return Array.from(new Set(sales.map(s => s.provider).filter(Boolean))).sort(); }
+  function distinctServices() { return Array.from(new Set(sales.map(s => s.services).filter(Boolean))).sort(); }
 
-  // filters: { start, end (Date, inclusive, UTC midnight), queues:Set|null, agents:Set|null, results:Set|null }
+  // filters: { start, end (Date, inclusive, UTC midnight),
+  //   queues/agents/results:Set|null (apply to calls),
+  //   teams/providers/services:Set|null (apply to sales only — calls rows don't carry these fields) }
   function inRange(dt, f) { const t = dt.getTime(); return t >= f.start.getTime() && t <= f.end.getTime(); }
   function passSet(v, set) { return !set || set.size === 0 || set.has(v); }
 
@@ -65,7 +68,12 @@ const DataEngine = (() => {
     return calls.filter(c => inRange(c.date, f) && passSet(c.queue, f.queues) && passSet(c.agent, f.agents) && passSet(c.result, f.results));
   }
   function filterSales(f) {
-    return sales.filter(s => inRange(s.date, f) && (!f.queues || f.queues.size === 0 || f.queues.has(s.campaign) || [...f.queues].some(q => (s.campaign || '').startsWith(q.split(' ')[0]))) && passSet(s.agent, f.agents));
+    return sales.filter(s => inRange(s.date, f)
+      && (!f.queues || f.queues.size === 0 || f.queues.has(s.campaign) || [...f.queues].some(q => (s.campaign || '').startsWith(q.split(' ')[0])))
+      && passSet(s.agent, f.agents)
+      && passSet(s.team, f.teams)
+      && passSet(s.provider, f.providers)
+      && passSet(s.services, f.services));
   }
 
   function prevPeriod(f) {
@@ -85,7 +93,7 @@ const DataEngine = (() => {
     load, ingest, dateFromNum, fmtDate, fmtDateShort, dow, DOW_LABELS, DAY,
     get calls() { return calls; }, get sales() { return sales; }, get bounds() { return bounds; },
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
-    distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders,
+    distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
     filterCalls, filterSales, prevPeriod, pctDelta,
   };
 })();
