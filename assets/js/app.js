@@ -40,6 +40,7 @@
     granularity: 'weekly', // daily | weekly | monthly
     start: null, end: null,
     queues: new Set(), agents: new Set(), results: new Set(),
+    teams: new Set(), providers: new Set(), services: new Set(),
     compare: true,
     theme: localStorage.getItem('sc_theme') || 'light',
     trendMetric: 'volume', // volume | result
@@ -146,11 +147,18 @@
     buildDropdown('queues', 'Queue', DataEngine.distinctQueues(), q => DataEngine.calls.filter(c => c.queue === q).length);
     buildDropdown('agents', 'Agent', DataEngine.distinctAgents(), a => DataEngine.calls.filter(c => c.agent === a).length);
     buildDropdown('results', 'Result', DataEngine.distinctResults(), r => DataEngine.calls.filter(c => c.result === r).length);
+    buildDropdown('teams', 'Team', DataEngine.distinctTeams(), t => DataEngine.sales.filter(s => s.team === t).length);
+    buildDropdown('providers', 'Provider', DataEngine.distinctProviders(), p => DataEngine.sales.filter(s => s.provider === p).length);
+    buildDropdown('services', 'Service', DataEngine.distinctServices(), s2 => DataEngine.sales.filter(s => s.services === s2).length);
   }
 
   // ---------------- Filtered data (memoized per render) ----------------
   function currentFilter() {
-    return { start: state.start, end: state.end, queues: state.queues, agents: state.agents, results: state.results };
+    return {
+      start: state.start, end: state.end,
+      queues: state.queues, agents: state.agents, results: state.results,
+      teams: state.teams, providers: state.providers, services: state.services,
+    };
   }
 
   function renderAll() {
@@ -672,10 +680,20 @@
   function applyRangePreset(preset) {
     const { max } = DataEngine.bounds;
     let start;
-    if (preset === '7d') start = new Date(max.getTime() - 6 * DataEngine.DAY);
-    else if (preset === '30d') start = new Date(max.getTime() - 29 * DataEngine.DAY);
-    else if (preset === 'mtd') start = new Date(Date.UTC(max.getUTCFullYear(), max.getUTCMonth(), 1));
-    else start = DataEngine.bounds.min;
+    if (preset === 'daily') {
+      // Single most-recent day that has data.
+      start = max;
+    } else if (preset === 'weekly') {
+      // Current week (Mon–Sun) that contains the latest data date.
+      const dow = max.getUTCDay(); // 0=Sun..6=Sat
+      const diffToMonday = (dow + 6) % 7; // days since Monday
+      start = new Date(max.getTime() - diffToMonday * DataEngine.DAY);
+    } else if (preset === 'monthly') {
+      // Month-to-date for the latest data date's month.
+      start = new Date(Date.UTC(max.getUTCFullYear(), max.getUTCMonth(), 1));
+    } else {
+      start = DataEngine.bounds.min;
+    }
     state.start = start < DataEngine.bounds.min ? DataEngine.bounds.min : start;
     state.end = max;
     $('#dateStart').value = DataEngine.fmtDate(state.start);
@@ -693,6 +711,7 @@
 
   function resetFilters() {
     state.queues.clear(); state.agents.clear(); state.results.clear();
+    state.teams.clear(); state.providers.clear(); state.services.clear();
     setupFilterDefaults();
     setActiveSeg('range', $('.seg[data-group="range"] button[data-range="all"]'));
     populateFilterOptions();
@@ -706,7 +725,7 @@
   }
 
   function updateFilterChipStates() {
-    ['queues', 'agents', 'results'].forEach(key => {
+    ['queues', 'agents', 'results', 'teams', 'providers', 'services'].forEach(key => {
       const btn = $(`#dd_${key}_btn`);
       if (!btn) return;
       const set = state[key];
