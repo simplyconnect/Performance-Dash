@@ -167,7 +167,7 @@
     renderTrend(calls);
     renderResultCluster(calls);
     renderQueueLeaderboard(calls);
-    renderAgentTable(calls);
+    renderAgentTable(calls, sales);
     renderHeatmap(calls);
     renderSalesKpis(sales, pSales);
     renderSalesByProvider(sales);
@@ -365,14 +365,26 @@
   }
 
   // ---------------- Agent table ----------------
-  function computeAgentRows(calls) {
+  function computeAgentRows(calls, sales) {
     const map = new Map();
+    function ensure(name) {
+      if (!map.has(name)) map.set(name, { agent: name, calls: 0, answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0, points: 0, rgu: 0, salesCount: 0 });
+      return map.get(name);
+    }
     calls.forEach(c => {
       if (!c.agent) return;
-      if (!map.has(c.agent)) map.set(c.agent, { agent: c.agent, calls: 0, answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0 });
-      const r = map.get(c.agent); r.calls++;
+      const r = ensure(c.agent); r.calls++;
       if (c.result === 'Answered') { r.answered++; r.talk += c.talk; r.hold += c.hold; r.wrap += c.wrap; r.talkN++; }
       if (c.result === 'Abandoned') r.abandoned++;
+    });
+    // Merge in sales performance so agents show up (and get credit) even if
+    // they only appear on the "sales Data" tab, not the calls tab.
+    (sales || []).forEach(s => {
+      if (!s.agent) return;
+      const r = ensure(s.agent);
+      r.points += Number(s.total) || 0;
+      r.rgu += Number(s.rgu) || 0;
+      r.salesCount++;
     });
     return Array.from(map.values()).map(r => ({
       ...r,
@@ -400,15 +412,14 @@
     return `<span class="rankmedal">${i + 1}</span>`;
   }
 
-  function renderAgentTable(calls) {
-    let rows = computeAgentRows(calls);
+  function renderAgentTable(calls, sales) {
+    let rows = computeAgentRows(calls, sales);
     const totalHandled = rows.reduce((a, r) => a + r.calls, 0) || 1;
     rows.forEach(r => r.share = r.calls / totalHandled * 100);
     const search = state.tableSearch.agents.toLowerCase();
     if (search) rows = rows.filter(r => r.agent.toLowerCase().includes(search));
     const { key, dir } = state.tableSort.agents;
     rows.sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * (dir === 'asc' ? 1 : -1));
-    rows = rows.slice(0, 10); // Top 10 agents only
     const maxShare = Math.max(...rows.map(x => x.share), 1);
     renderTable('agents', rows, {
       pageSize: 10,
@@ -424,6 +435,9 @@
         { key: 'aht', label: 'AHT', cls: 'r', render: r => hmsShort(r.aht) },
         { key: 'avgTalk', label: 'Avg Talk', cls: 'r', render: r => hmsShort(r.avgTalk) },
         { key: 'avgHold', label: 'Avg Hold', cls: 'r', render: r => hmsShort(r.avgHold) },
+        { key: 'salesCount', label: 'Sales', cls: 'r' },
+        { key: 'points', label: 'Total Points', cls: 'r', render: r => int(r.points) },
+        { key: 'rgu', label: 'RGUs', cls: 'r', render: r => int(r.rgu) },
       ],
       empty: { title: 'No agent activity', sub: 'Try widening the date range or clearing filters.' },
     });
