@@ -44,7 +44,7 @@
     theme: localStorage.getItem('sc_theme') || 'light',
     trendMetric: 'volume', // volume | result
     tablePage: { agents: 1, queues: 1, sales: 1 },
-    tableSort: { agents: { key: 'calls', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' } },
+    tableSort: { agents: { key: 'perf', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' } },
     tableSearch: { agents: '', queues: '', sales: '' },
   };
 
@@ -393,6 +393,7 @@
       avgHold: r.talkN ? r.hold / r.talkN : 0,
       avgWrap: r.talkN ? r.wrap / r.talkN : 0,
       share: 0,
+      perf: (r.points || 0) + (r.rgu || 0), // blended sales score, used for default ranking
     }));
   }
 
@@ -414,8 +415,10 @@
 
   function renderAgentTable(calls, sales) {
     let rows = computeAgentRows(calls, sales);
-    const totalHandled = rows.reduce((a, r) => a + r.calls, 0) || 1;
-    rows.forEach(r => r.share = r.calls / totalHandled * 100);
+    // "Calls Handled" / Share of Volume are based on ANSWERED calls only —
+    // abandoned calls don't count as "handled".
+    const totalHandled = rows.reduce((a, r) => a + r.answered, 0) || 1;
+    rows.forEach(r => r.share = r.answered / totalHandled * 100);
     const search = state.tableSearch.agents.toLowerCase();
     if (search) rows = rows.filter(r => r.agent.toLowerCase().includes(search));
     const { key, dir } = state.tableSort.agents;
@@ -430,14 +433,14 @@
               <span class="agentava" style="background:${avaColor(r.agent)}">${escapeHtml(initials(r.agent))}</span>
               <span>${escapeHtml(r.agent)}</span>
             </span>` },
-        { key: 'calls', label: 'Calls Handled', cls: 'r' },
-        { key: 'share', label: 'Share of Volume', cls: 'r', render: r => barCell(r.share, maxShare) },
+        { key: 'answered', label: 'Calls Handled', cls: 'r' },
+        { key: 'salesCount', label: 'Sales', cls: 'r' },
+        { key: 'rgu', label: 'RGUs', cls: 'r', render: r => int(r.rgu) },
+        { key: 'points', label: 'Total Points', cls: 'r', render: r => int(r.points) },
         { key: 'aht', label: 'AHT', cls: 'r', render: r => hmsShort(r.aht) },
         { key: 'avgTalk', label: 'Avg Talk', cls: 'r', render: r => hmsShort(r.avgTalk) },
         { key: 'avgHold', label: 'Avg Hold', cls: 'r', render: r => hmsShort(r.avgHold) },
-        { key: 'salesCount', label: 'Sales', cls: 'r' },
-        { key: 'points', label: 'Total Points', cls: 'r', render: r => int(r.points) },
-        { key: 'rgu', label: 'RGUs', cls: 'r', render: r => int(r.rgu) },
+        { key: 'share', label: 'Share of Volume', cls: 'r', render: r => barCell(r.share, maxShare) },
       ],
       empty: { title: 'No agent activity', sub: 'Try widening the date range or clearing filters.' },
     });
