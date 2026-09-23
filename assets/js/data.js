@@ -83,6 +83,29 @@ const DataEngine = (() => {
     return Object.assign({}, f, { start, end });
   }
 
+  // ---------------- Hourly breakdown (calls + sales, 0-23 = the hour value
+  // already parsed out of the sheet's "Time Frame" / "Timestamp" columns) ----
+  function hourlyStats(filteredCalls, filteredSales) {
+    const buckets = Array.from({ length: 24 }, (_, h) => ({
+      hour: h, calls: 0, answered: 0, missed: 0, sales: 0, points: 0, rgu: 0,
+    }));
+    filteredCalls.forEach(c => {
+      if (c.hour == null || c.hour < 0 || c.hour > 23) return;
+      const b = buckets[c.hour];
+      b.calls++;
+      if (c.result === 'Answered') b.answered++; else b.missed++;
+    });
+    (filteredSales || []).forEach(s => {
+      if (s.h == null || s.h < 0 || s.h > 23) return;
+      const b = buckets[s.h];
+      b.sales++;
+      b.points += Number(s.total) || 0;
+      b.rgu += Number(s.rgu) || 0;
+    });
+    buckets.forEach(b => { b.answerRate = b.calls ? b.answered / b.calls * 100 : 0; });
+    return buckets;
+  }
+
   function pctDelta(cur, prev) {
     if (!prev) return null;
     if (prev === 0) return cur === 0 ? 0 : null;
@@ -94,6 +117,6 @@ const DataEngine = (() => {
     get calls() { return calls; }, get sales() { return sales; }, get bounds() { return bounds; },
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
-    filterCalls, filterSales, prevPeriod, pctDelta,
+    filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats,
   };
 })();
