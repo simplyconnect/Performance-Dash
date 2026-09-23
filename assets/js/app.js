@@ -47,6 +47,8 @@
     tablePage: { agents: 1, queues: 1, sales: 1 },
     tableSort: { agents: { key: 'perf', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' } },
     tableSearch: { agents: '', queues: '', sales: '' },
+    hourlyTZ: 'ct', // ct | pkt
+    page: 'overview', // overview | hourly
   };
 
   // ---------------- Boot ----------------
@@ -182,6 +184,7 @@
     renderSalesByTeam(sales);
     renderSalesTable(sales);
     renderDataHealth(calls, sales);
+    renderHourly(calls, sales);
     updateFilterChipStates();
   }
 
@@ -570,6 +573,107 @@
     });
   }
 
+  // ---------------- Hourly page ----------------
+  function hr12(h) { let hh = h % 12; if (hh === 0) hh = 12; return hh; }
+  function ctLabel(h) { const pad = n => String(n).padStart(2, '0'); return `${pad(h)}-${pad((h + 1) % 24)}CT`; }
+  function pakLabel(h) { const period = h < 12 ? 'AM' : 'PM'; return `${hr12(h)}-${hr12((h + 1) % 24)}${period}`; }
+
+  // Reorders the 24 CT-indexed buckets into ascending order for the chosen
+  // timezone and attaches a display label to each. Pak Time is a fixed
+  // +10h offset from Central Time (confirmed against the user's own
+  // Pak/Central hour-mapping sheet), so this is just a relabel + rotation —
+  // the underlying call/sale counts per bucket never change.
+  function hourBucketsForDisplay(buckets) {
+    if (state.hourlyTZ === 'pkt') {
+      return buckets
+        .map(b => Object.assign({}, b, { dispHour: (b.hour + 10) % 24 }))
+        .sort((a, b) => a.dispHour - b.dispHour)
+        .map(b => Object.assign({}, b, { label: pakLabel(b.dispHour) }));
+    }
+    return buckets.map(b => Object.assign({}, b, { label: ctLabel(b.hour) }));
+  }
+
+  function heatColors(pct) {
+    // 0% -> red, 50% -> amber, 100% -> green
+    const hue = Math.max(0, Math.min(120, pct * 1.2));
+    return { bg: `hsl(${hue} 75% 90%)`, fg: `hsl(${hue} 70% 28%)` };
+  }
+
+  function renderHourCalls(buckets) {
+    const el2 = $('#hourHeatCalls'); if (!el2) return;
+    const rows = hourBucketsForDisplay(buckets);
+    el2.innerHTML = rows.map((b, i) => {
+      const c = b.calls === 0 ? { bg: 'var(--heat-0)', fg: 'var(--muted)' } : heatColors(b.answerRate);
+      return `<div class="hourHeat__cell" style="background:${c.bg}; color:${c.fg}; animation-delay:${i * 14}ms" data-h="${b.label}" data-rate="${b.answerRate.toFixed(1)}" data-calls="${b.calls}" data-ans="${b.answered}" data-miss="${b.missed}">
+        <div class="h">${b.label}</div>
+        <div class="v">${b.calls ? b.answerRate.toFixed(0) + '%' : '—'}</div>
+        <div class="n">${int(b.calls)} calls</div>
+      </div>`;
+    }).join('');
+    $$('.hourHeat__cell', el2).forEach(c => {
+      c.addEventListener('mousemove', evt => {
+        Charts.showTip(evt, `<div class="t">${c.dataset.h}</div><b>${c.dataset.rate}%</b> answer rate<br/>${int(c.dataset.calls)} calls · ${int(c.dataset.ans)} answered · ${int(c.dataset.miss)} missed`);
+        Charts.moveTip(evt);
+      });
+      c.addEventListener('mouseleave', Charts.hideTip);
+    });
+  }
+
+  function renderHourSales(buckets) {
+    const el2 = $('#hourHeatSales'); if (!el2) return;
+    const rows = hourBucketsForDisplay(buckets);
+    const max = Math.max(1, ...rows.map(b => b.sales));
+    el2.innerHTML = rows.map((b, i) => {
+      const alpha = b.sales === 0 ? 0 : Math.max(15, b.sales / max * 100);
+      const bg = b.sales === 0 ? 'var(--heat-0)' : `color-mix(in srgb, var(--amber) ${alpha.toFixed(0)}%, var(--heat-0))`;
+      const fg = b.sales === 0 ? 'var(--muted)' : 'var(--amber-ink)';
+      return `<div class="hourHeat__cell" style="background:${bg}; color:${fg}; animation-delay:${i * 14}ms" data-h="${b.label}" data-sales="${b.sales}" data-pts="${b.points}" data-rgu="${b.rgu}">
+        <div class="h">${b.label}</div>
+        <div class="v">${b.sales || '—'}</div>
+        <div class="n">${int(b.rgu)} RGUs</div>
+      </div>`;
+    }).join('');
+    $$('.hourHeat__cell', el2).forEach(c => {
+      c.addEventListener('mousemove', evt => {
+        Charts.showTip(evt, `<div class="t">${c.dataset.h}</div><b>${int(c.dataset.sales)}</b> sales<br/>${int(c.dataset.pts)} points · ${int(c.dataset.rgu)} RGUs`);
+        Charts.moveTip(evt);
+      });
+      c.addEventListener('mouseleave', Charts.hideTip);
+    });
+  }
+
+  function renderHourlyTable(buckets) {
+    const el2 = $('#tbl_hourly'); if (!el2) return;
+    const rows = hourBucketsForDisplay(buckets);
+    const maxCalls = Math.max(1, ...rows.map(r => r.calls));
+    const html = `<table class="tbl">
+      <thead><tr>
+        <th>Hour</th><th class="r">Total Calls</th><th class="r">Answered</th><th class="r">Missed</th>
+        <th class="r">Answer Rate</th><th class="r">Sales</th><th class="r">Points</th><th class="r">RGUs</th><th>Volume</th>
+      </tr></thead>
+      <tbody>${rows.map(b => `<tr>
+        <td><b>${b.label}</b></td>
+        <td class="r">${int(b.calls)}</td>
+        <td class="r">${int(b.answered)}</td>
+        <td class="r">${int(b.missed)}</td>
+        <td class="r">${b.calls ? pct(b.answerRate, 0) : '—'}</td>
+        <td class="r">${int(b.sales)}</td>
+        <td class="r">${int(b.points)}</td>
+        <td class="r">${int(b.rgu)}</td>
+        <td><div class="hourly-bar"><i style="width:${(b.calls / maxCalls * 100).toFixed(1)}%"></i></div></td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+    el2.innerHTML = html;
+  }
+
+  function renderHourly(calls, sales) {
+    if (!$('#page-hourly')) return;
+    const buckets = DataEngine.hourlyStats(calls, sales);
+    renderHourCalls(buckets);
+    renderHourSales(buckets);
+    renderHourlyTable(buckets);
+  }
+
   // ---------------- Data health ----------------
   function renderDataHealth(calls, sales) {
     const el2 = $('#dataHealth'); if (!el2) return;
@@ -641,11 +745,13 @@
     // rail navigation: smooth-scroll to section + track active state
     const railBtns = $$('.rail__btn[data-goto]');
     railBtns.forEach(b => b.addEventListener('click', () => {
+      switchPage('overview');
       const target = document.getElementById(b.dataset.goto);
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
     const sections = railBtns.map(b => ({ btn: b, el: document.getElementById(b.dataset.goto) })).filter(s => s.el);
     const onScroll = debounce(() => {
+      if (state.page !== 'overview') return;
       const y = window.scrollY + 110;
       let active = sections[0];
       sections.forEach(s => { if (s.el.offsetTop <= y) active = s; });
@@ -653,6 +759,30 @@
       active.btn.setAttribute('aria-current', 'page');
     }, 60);
     window.addEventListener('scroll', onScroll);
+
+    // Hourly tab
+    $('#rail_hourly').addEventListener('click', () => switchPage('hourly'));
+    $$('.seg[data-group="hourlyTz"] button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setActiveSeg('hourlyTz', btn);
+        state.hourlyTZ = btn.dataset.tz;
+        renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
+      });
+    });
+  }
+
+  function switchPage(id) {
+    state.page = id;
+    $('#top').hidden = id !== 'overview';
+    $('#page-hourly').hidden = id !== 'hourly';
+    $$('.rail__btn[data-goto], .rail__btn[data-page]').forEach(b => b.removeAttribute('aria-current'));
+    if (id === 'hourly') {
+      $('#rail_hourly').setAttribute('aria-current', 'page');
+      renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      $('.rail__btn[data-goto="top"]').setAttribute('aria-current', 'page');
+    }
   }
 
   function togglePop(sel) {
