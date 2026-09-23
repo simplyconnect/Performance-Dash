@@ -700,15 +700,14 @@
   function matrixDayBlock(day, columns) {
     const t = day.totals;
     const salesMax = Math.max(0, ...columns.map(h => day.buckets[h].sales));
-    const missedMax = Math.max(0, ...columns.map(h => day.buckets[h].missed));
     const dateLabel = day.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
     const rowsDef = [
       { key: 'sales', label: 'Sales', cell: h => { const v = day.buckets[h].sales; return `<td class="r"${scaleCell(v, salesMax, '--green')}>${v || ''}</td>`; }, total: int(t.sales) },
       { key: 'answered', label: 'Answered', cell: h => { const v = day.buckets[h].answered; return `<td class="r">${v || ''}</td>`; }, total: int(t.answered) },
-      { key: 'missed', label: 'Missed', cell: h => { const v = day.buckets[h].missed; return `<td class="r"${scaleCell(v, missedMax, '--green')}>${v || ''}</td>`; }, total: int(t.missed) },
+      { key: 'missed', label: 'Missed', cell: h => { const v = day.buckets[h].missed; return `<td class="r">${v || ''}</td>`; }, total: int(t.missed) },
       { key: 'missedPct', label: 'Missed %', cell: h => { const b = day.buckets[h]; const has = (b.answered + b.missed) > 0; return `<td class="r"${missedPctCell(b.missedPct, has)}>${has ? pct(b.missedPct, 2) : ''}</td>`; }, total: (t.answered + t.missed) ? pct(t.missedPct, 2) : '—' },
     ];
-    return rowsDef.map((r, i) => `<tr class="${r.key === 'missedPct' ? 'matrix__pctrow' : ''}">
+    return rowsDef.map((r, i) => `<tr class="${i === 0 ? 'matrix__blockstart ' : ''}${r.key === 'missedPct' ? 'matrix__pctrow matrix__blockend' : ''}">
       ${i === 0 ? `<td class="matrix__date" rowspan="4"><b>${dateLabel}</b></td>` : ''}
       <td class="matrix__metric">${r.label}</td>
       ${columns.map(r.cell).join('')}
@@ -726,14 +725,13 @@
     dayRows.forEach(day => { grand.sales += day.totals.sales; grand.answered += day.totals.answered; grand.missed += day.totals.missed; });
     const grandPct = (grand.answered + grand.missed) ? grand.missed / (grand.answered + grand.missed) * 100 : 0;
     const salesMax = Math.max(0, ...colTotals.map(c => c.sales));
-    const missedMax = Math.max(0, ...colTotals.map(c => c.missed));
     const rowsDef = [
       { label: 'Sales', cell: c => `<td class="r"${scaleCell(c.sales, salesMax, '--green')}>${c.sales || ''}</td>`, total: int(grand.sales) },
       { label: 'Answered', cell: c => `<td class="r">${c.answered || ''}</td>`, total: int(grand.answered) },
-      { label: 'Missed', cell: c => `<td class="r"${scaleCell(c.missed, missedMax, '--green')}>${c.missed || ''}</td>`, total: int(grand.missed) },
+      { label: 'Missed', cell: c => `<td class="r">${c.missed || ''}</td>`, total: int(grand.missed) },
       { label: 'Missed %', cell: c => { const has = (c.answered + c.missed) > 0; const p = has ? c.missed / (c.answered + c.missed) * 100 : 0; return `<td class="r"${missedPctCell(p, has)}>${has ? pct(p, 2) : ''}</td>`; }, total: (grand.answered + grand.missed) ? pct(grandPct, 2) : '—' },
     ];
-    return rowsDef.map((r, i) => `<tr class="matrix__totalrow ${r.label === 'Missed %' ? 'matrix__pctrow' : ''}">
+    return rowsDef.map((r, i) => `<tr class="matrix__totalrow ${i === 0 ? 'matrix__blockstart ' : ''}${r.label === 'Missed %' ? 'matrix__pctrow matrix__blockend' : ''}">
       ${i === 0 ? `<td class="matrix__date" rowspan="4"><b>Total</b></td>` : ''}
       <td class="matrix__metric">${r.label}</td>
       ${colTotals.map(r.cell).join('')}
