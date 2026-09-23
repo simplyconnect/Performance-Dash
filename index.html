@@ -36,6 +36,7 @@
       <button class="rail__btn" data-goto="sec-health" aria-label="Reports"><svg viewBox="0 0 24 24" fill="none"><path d="M7 3h7l5 5v13H7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="tipl">Reports</span></button>
       <button class="rail__btn" data-goto="sec-heatmap" aria-label="Schedule"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="tipl">Schedule</span></button>
       <button class="rail__btn" data-goto="sec-queues" aria-label="Campaigns"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12.5 12.5 3H20v7.5L10.5 20 3 12.5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16" cy="7" r="1.3" fill="currentColor"/></svg><span class="tipl">Campaigns</span></button>
+      <button class="rail__btn" id="rail_hourly" data-page="hourly" aria-label="Hourly"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tipl">Hourly</span></button>
     </div>
     <button class="rail__btn rail__theme" id="themeToggle" aria-label="Toggle dark mode">
       <svg viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" fill="currentColor"/></svg>
@@ -122,8 +123,8 @@
       </div>
     </div>
 
-    <!-- ================= Stage ================= -->
-    <main class="stage" id="top">
+    <!-- ================= Stage: Overview page ================= -->
+    <main class="stage page" id="top" data-page-id="overview">
       <div id="dataBanner"></div>
 
       <!-- KPI row -->
@@ -260,6 +261,41 @@
         </div>
       </div>
     </main>
+
+    <!-- ================= Stage: Hourly page ================= -->
+    <section class="stage page" id="page-hourly" data-page-id="hourly" hidden>
+      <div class="hourlyHead">
+        <div>
+          <h2 class="hourlyHead__title">Hourly Performance</h2>
+          <p class="hourlyHead__sub">Calls &amp; sales broken down hour-by-hour for the selected range and filters.</p>
+        </div>
+        <div class="seg" data-group="hourlyTz">
+          <button data-tz="ct" aria-pressed="true">Central Time</button>
+          <button data-tz="pkt" aria-pressed="false">Pakistan Time</button>
+        </div>
+      </div>
+
+      <div class="card c12">
+        <div class="card__head">
+          <div><div class="card__title">Answer Rate Heatmap by Hour</div><div class="card__sub">Green = high answer rate · Red = low</div></div>
+        </div>
+        <div class="hourHeat" id="hourHeatCalls"></div>
+      </div>
+
+      <div class="card c12">
+        <div class="card__head">
+          <div><div class="card__title">Sales Heatmap by Hour</div><div class="card__sub">Darker = more deals closed that hour</div></div>
+        </div>
+        <div class="hourHeat" id="hourHeatSales"></div>
+      </div>
+
+      <div class="card c12">
+        <div class="card__head">
+          <div><div class="card__title">Hourly Detail Table</div><div class="card__sub">Every hour in the selected range — calls, answer rate and sales side by side</div></div>
+        </div>
+        <div class="tbl-wrap" id="tbl_hourly"></div>
+      </div>
+    </section>
   </div>
 </div>
 
