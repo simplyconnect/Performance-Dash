@@ -460,3 +460,27 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 .heatInner{min-width:640px}
 .salesSection{display:flex; flex-direction:column; gap:16px}
 .salesSection__title{font-size:16px; font-weight:800; padding-left:4px}
+
+/* ---------- Hourly page ---------- */
+.page[hidden]{display:none}
+#page-hourly{display:flex; flex-direction:column; gap:16px}
+.hourlyHead{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:12px}
+.hourlyHead__title{font-size:20px; font-weight:800; margin:0 0 4px}
+.hourlyHead__sub{margin:0; color:var(--muted); font-size:13px}
+
+.hourHeat{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px}
+.hourHeat__cell{
+  flex:1 0 64px; min-width:64px; border-radius:14px; padding:10px 8px; text-align:center;
+  background:var(--cell-bg); color:var(--cell-fg); cursor:default;
+  opacity:0; transform:translateY(6px) scale(.94);
+  animation:hourCellIn .38s cubic-bezier(.2,.7,.3,1) forwards;
+  transition:transform .15s ease, box-shadow .15s ease;
+}
+.hourHeat__cell:hover{transform:translateY(-2px) scale(1.04); box-shadow:0 6px 16px rgba(0,0,0,.14); z-index:1}
+.hourHeat__cell .h{font-size:11px; font-weight:700; opacity:.75; letter-spacing:.02em}
+.hourHeat__cell .v{font-size:18px; font-weight:800; margin:3px 0 2px; font-variant-numeric:tabular-nums}
+.hourHeat__cell .n{font-size:10.5px; opacity:.75}
+@keyframes hourCellIn{to{opacity:1; transform:translateY(0) scale(1)}}
+
+.hourly-bar{position:relative; height:8px; border-radius:6px; background:var(--heat-0); overflow:hidden; min-width:90px}
+.hourly-bar i{position:absolute; inset:0 auto 0 0; border-radius:6px; background:var(--amber); transition:width .3s ease}
