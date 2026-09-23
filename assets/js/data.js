@@ -7,6 +7,19 @@ const DataEngine = (() => {
   const EPOCH = Date.UTC(1970, 0, 1);
   const DAY = 86400000;
 
+  // ---------------- Daily Call Center Report config ----------------
+  // Only these queues ("Call Center" column) count toward the Daily
+  // report. Edit this list any time your groups change.
+  const REPORT_QUEUES = [
+    'Group 44 Sales', 'Group 48', 'Group 56', 'Group 50 CS', 'Group 42',
+    'Group 43', 'Group 41', 'Group 18', 'Group 13 OB CB', 'Group 45 ATT Sales',
+    'Group 51', 'Group 54', 'Group 5', 'Group 14 (Spectrum cs call)', 'Group 53',
+  ];
+  // Abandoned calls from these queues are NEVER counted as "Missed" — even
+  // though Group 13 OB CB and Group 18 are also in REPORT_QUEUES above
+  // (their calls/answered/sales still count, only their abandons don't).
+  const ABANDON_EXCLUDE_QUEUES = ['Group 10 FB $99', 'Group 13 OB CB', 'Group 18'];
+
   let raw = null;      // parsed payload
   let calls = [];      // expanded call rows
   let sales = [];       // expanded sale rows
@@ -85,25 +98,112 @@ const DataEngine = (() => {
 
   // ---------------- Hourly breakdown (calls + sales, 0-23 = the hour value
   // already parsed out of the sheet's "Time Frame" / "Timestamp" columns) ----
+  // "Missed" = Call Result === 'Abandoned' only (not every non-Answered
+  // result — Overflow/Stranded/Escaped/Transferred are neither). "Answered"
+  // = Call Result === 'Answered'. missedPct is the ratio between just these
+  // two (Missed / (Answered + Missed)), which is the standard abandon-rate
+  // formula and matches the "Missed %" row on the daily/hourly sheet.
+  function classifyCall(b, c) {
+    b.calls++;
+    if (c.result === 'Answered') b.answered++;
+    else if (c.result === 'Abandoned') b.missed++;
+  }
+  function addSale(b, s) {
+    b.sales++;
+    b.points += Number(s.total) || 0;
+    b.rgu += Number(s.rgu) || 0;
+  }
+  function finalizeBucket(b) {
+    b.answerRate = b.calls ? b.answered / b.calls * 100 : 0;
+    const decided = b.answered + b.missed;
+    b.missedPct = decided ? b.missed / decided * 100 : 0;
+  }
+
   function hourlyStats(filteredCalls, filteredSales) {
     const buckets = Array.from({ length: 24 }, (_, h) => ({
       hour: h, calls: 0, answered: 0, missed: 0, sales: 0, points: 0, rgu: 0,
     }));
     filteredCalls.forEach(c => {
       if (c.hour == null || c.hour < 0 || c.hour > 23) return;
-      const b = buckets[c.hour];
-      b.calls++;
-      if (c.result === 'Answered') b.answered++; else b.missed++;
+      classifyCall(buckets[c.hour], c);
     });
     (filteredSales || []).forEach(s => {
       if (s.h == null || s.h < 0 || s.h > 23) return;
-      const b = buckets[s.h];
-      b.sales++;
-      b.points += Number(s.total) || 0;
-      b.rgu += Number(s.rgu) || 0;
+      addSale(buckets[s.h], s);
     });
-    buckets.forEach(b => { b.answerRate = b.calls ? b.answered / b.calls * 100 : 0; });
+    buckets.forEach(finalizeBucket);
     return buckets;
+  }
+
+  // "Today", independent of anything picked in the top filter bar — the
+  // real calendar date, so this always rolls forward on its own at
+  // midnight. Calls use the same criteria as the Daily Call Center Report
+  // (REPORT_QUEUES only, Missed never counts ABANDON_EXCLUDE_QUEUES).
+  // Sales are every sale logged today — no queue restriction, since that
+  // side of the sheet was already correct.
+  function todayDateStr() { return new Date().toISOString().slice(0, 10); }
+
+  function todayHourlyStats(dateStr) {
+    const day = dateStr || todayDateStr();
+    const buckets = Array.from({ length: 24 }, (_, h) => ({
+      hour: h, calls: 0, answered: 0, missed: 0, sales: 0, points: 0, rgu: 0,
+    }));
+    calls.forEach(c => {
+      if (c.dateStr !== day || !REPORT_QUEUES.includes(c.queue)) return;
+      if (c.hour == null || c.hour < 0 || c.hour > 23) return;
+      const b = buckets[c.hour];
+      b.calls++;
+      if (c.result === 'Answered') b.answered++;
+      else if (c.result === 'Abandoned' && !ABANDON_EXCLUDE_QUEUES.includes(c.queue)) b.missed++;
+    });
+    sales.forEach(s => {
+      if (s.dateStr !== day) return;
+      if (s.h == null || s.h < 0 || s.h > 23) return;
+      addSale(buckets[s.h], s);
+    });
+    buckets.forEach(finalizeBucket);
+    return { dateStr: day, buckets };
+  }
+
+  // ---------------- Daily x Hourly matrix (one row-group per calendar date,
+  // one column per hour) — powers the "Sales / Answered / Missed / Missed %"
+  // breakdown table. Dates come from the calls' own date field, hours are
+  // the same raw 0-23 (Central Time) bucket used everywhere else, so this
+  // stays in sync with the single-range Hourly page and the KPI cards. ----
+  function dailyHourlyMatrix(filteredCalls, filteredSales) {
+    const days = new Map(); // dateStr -> { dateStr, date, buckets[24] }
+    function ensureDay(dateStr, date) {
+      let d = days.get(dateStr);
+      if (!d) {
+        d = {
+          dateStr, date,
+          buckets: Array.from({ length: 24 }, (_, h) => ({
+            hour: h, calls: 0, answered: 0, missed: 0, sales: 0, points: 0, rgu: 0,
+          })),
+        };
+        days.set(dateStr, d);
+      }
+      return d;
+    }
+    filteredCalls.forEach(c => {
+      if (c.hour == null || c.hour < 0 || c.hour > 23) return;
+      const day = ensureDay(c.dateStr, c.date);
+      classifyCall(day.buckets[c.hour], c);
+    });
+    (filteredSales || []).forEach(s => {
+      if (s.h == null || s.h < 0 || s.h > 23) return;
+      const day = ensureDay(s.dateStr, s.date);
+      addSale(day.buckets[s.h], s);
+    });
+    const rows = Array.from(days.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+    rows.forEach(day => {
+      day.buckets.forEach(finalizeBucket);
+      const t = { calls: 0, answered: 0, missed: 0, sales: 0, points: 0, rgu: 0 };
+      day.buckets.forEach(b => { t.calls += b.calls; t.answered += b.answered; t.missed += b.missed; t.sales += b.sales; t.points += b.points; t.rgu += b.rgu; });
+      finalizeBucket(t);
+      day.totals = t;
+    });
+    return rows;
   }
 
   function pctDelta(cur, prev) {
@@ -112,11 +212,46 @@ const DataEngine = (() => {
     return ((cur - prev) / prev) * 100;
   }
 
+  // ---------------- Daily Call Center Report ----------------
+  // One row per calendar date, restricted to REPORT_QUEUES only. Missed
+  // (Abandoned) never counts calls from ABANDON_EXCLUDE_QUEUES, whether or
+  // not that queue is itself part of REPORT_QUEUES.
+  function dailyReport(filteredCalls, filteredSales) {
+    const inReport = c => REPORT_QUEUES.includes(c.queue);
+    const salesInReport = s => REPORT_QUEUES.includes(s.campaign)
+      || REPORT_QUEUES.some(g => (s.campaign || '').startsWith(g.split(' ')[0]));
+
+    const days = new Map(); // dateStr -> row
+    function ensureDay(dateStr, date) {
+      let d = days.get(dateStr);
+      if (!d) { d = { dateStr, date, calls: 0, answered: 0, missed: 0, sales: 0, points: 0, rgu: 0 }; days.set(dateStr, d); }
+      return d;
+    }
+    filteredCalls.forEach(c => {
+      if (!inReport(c)) return;
+      const day = ensureDay(c.dateStr, c.date);
+      day.calls++;
+      if (c.result === 'Answered') day.answered++;
+      else if (c.result === 'Abandoned' && !ABANDON_EXCLUDE_QUEUES.includes(c.queue)) day.missed++;
+    });
+    (filteredSales || []).forEach(s => {
+      if (!salesInReport(s)) return;
+      const day = ensureDay(s.dateStr, s.date);
+      day.sales++;
+      day.points += Number(s.total) || 0;
+      day.rgu += Number(s.rgu) || 0;
+    });
+    const rows = Array.from(days.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+    rows.forEach(d => { const dec = d.answered + d.missed; d.missedPct = dec ? d.missed / dec * 100 : 0; });
+    return rows;
+  }
+
   return {
     load, ingest, dateFromNum, fmtDate, fmtDateShort, dow, DOW_LABELS, DAY,
     get calls() { return calls; }, get sales() { return sales; }, get bounds() { return bounds; },
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
-    filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats,
+    filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats, dailyHourlyMatrix, dailyReport,
+    todayDateStr, todayHourlyStats, REPORT_QUEUES, ABANDON_EXCLUDE_QUEUES,
   };
 })();
