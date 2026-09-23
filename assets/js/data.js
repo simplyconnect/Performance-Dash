@@ -222,9 +222,14 @@ const DataEngine = (() => {
   }
 
   // ---------------- Daily Call Center Report ----------------
-  // One row per calendar date, restricted to REPORT_QUEUES only. Missed
-  // (Abandoned) never counts calls from ABANDON_EXCLUDE_QUEUES, whether or
-  // not that queue is itself part of REPORT_QUEUES.
+  // One row-group per calendar date, restricted to REPORT_QUEUES only.
+  // Missed (Abandoned) never counts calls from ABANDON_EXCLUDE_QUEUES,
+  // whether or not that queue is itself part of REPORT_QUEUES.
+  // "Total Calls" = Answered + Missed only (matches the sheet's "# of
+  // Calls" column) — NOT every call in the queue, since some results
+  // (Overflow/Transferred/etc.) are neither answered nor missed.
+  // Sales are also broken down by Provider (one sub-row per provider that
+  // had a sale that day) since calls have no provider of their own.
   function dailyReport(filteredCalls, filteredSales) {
     const inReport = c => REPORT_QUEUES.includes(c.queue);
     const salesInReport = s => REPORT_QUEUES.includes(s.campaign)
@@ -233,8 +238,13 @@ const DataEngine = (() => {
     const days = new Map(); // dateStr -> row
     function ensureDay(dateStr, date) {
       let d = days.get(dateStr);
-      if (!d) { d = { dateStr, date, calls: 0, answered: 0, missed: 0, sales: 0, points: 0, rgu: 0 }; days.set(dateStr, d); }
+      if (!d) { d = { dateStr, date, calls: 0, answered: 0, missed: 0, providers: new Map() }; days.set(dateStr, d); }
       return d;
+    }
+    function ensureProvider(day, name) {
+      let p = day.providers.get(name);
+      if (!p) { p = { provider: name, sales: 0, points: 0, rgu: 0 }; day.providers.set(name, p); }
+      return p;
     }
     filteredCalls.forEach(c => {
       if (!inReport(c)) return;
@@ -246,12 +256,21 @@ const DataEngine = (() => {
     (filteredSales || []).forEach(s => {
       if (!salesInReport(s)) return;
       const day = ensureDay(s.dateStr, s.date);
-      day.sales++;
-      day.points += Number(s.total) || 0;
-      day.rgu += Number(s.rgu) || 0;
+      const p = ensureProvider(day, s.provider || 'Unknown');
+      p.sales++;
+      p.points += Number(s.total) || 0;
+      p.rgu += Number(s.rgu) || 0;
     });
     const rows = Array.from(days.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
-    rows.forEach(d => { const dec = d.answered + d.missed; d.missedPct = dec ? d.missed / dec * 100 : 0; });
+    rows.forEach(d => {
+      d.totalCalls = d.answered + d.missed;
+      d.missedPct = d.totalCalls ? d.missed / d.totalCalls * 100 : 0;
+      d.providerRows = Array.from(d.providers.values()).sort((a, b) => b.sales - a.sales);
+      d.sales = d.providerRows.reduce((a, p) => a + p.sales, 0);
+      d.points = d.providerRows.reduce((a, p) => a + p.points, 0);
+      d.rgu = d.providerRows.reduce((a, p) => a + p.rgu, 0);
+      if (!d.providerRows.length) d.providerRows = [{ provider: '—', sales: 0, points: 0, rgu: 0 }];
+    });
     return rows;
   }
 
