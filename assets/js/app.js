@@ -184,6 +184,7 @@
     renderSalesByTeam(sales);
     renderSalesTable(sales);
     renderDataHealth(calls, sales);
+    renderDailyReport(DataEngine.dailyReport(calls, sales));
     renderHourly(calls, sales);
     updateFilterChipStates();
   }
@@ -649,7 +650,7 @@
     const html = `<table class="tbl">
       <thead><tr>
         <th>Hour</th><th class="r">Total Calls</th><th class="r">Answered</th><th class="r">Missed</th>
-        <th class="r">Answer Rate</th><th class="r">Sales</th><th class="r">Points</th><th class="r">RGUs</th><th>Volume</th>
+        <th class="r">Answer Rate</th><th class="r">Missed %</th><th class="r">Sales</th><th class="r">Points</th><th class="r">RGUs</th><th>Volume</th>
       </tr></thead>
       <tbody>${rows.map(b => `<tr>
         <td><b>${b.label}</b></td>
@@ -657,6 +658,7 @@
         <td class="r">${int(b.answered)}</td>
         <td class="r">${int(b.missed)}</td>
         <td class="r">${b.calls ? pct(b.answerRate, 0) : '—'}</td>
+        <td class="r">${(b.answered + b.missed) ? pct(b.missedPct, 1) : '—'}</td>
         <td class="r">${int(b.sales)}</td>
         <td class="r">${int(b.points)}</td>
         <td class="r">${int(b.rgu)}</td>
@@ -666,12 +668,154 @@
     el2.innerHTML = html;
   }
 
+  // ---------------- Daily x Hourly matrix table ----------------
+  // Replicates the "Sept'26 / Pak Time / Central Time" sheet: one block of
+  // 4 rows (Sales, Answered, Missed, Missed %) per calendar date, one
+  // column per active hour (shown in both Pakistan Time and Central Time),
+  // plus a Grand Total column per row and a Total block across all dates.
+  function matrixColumns(dayRows) {
+    // Only show hours that actually have calls or sales somewhere in the
+    // selected range — keeps the table to the real shift window (e.g. the
+    // sample sheet only ever has traffic 06:00–24:00 CT) instead of 24
+    // mostly-empty columns.
+    const active = new Set();
+    dayRows.forEach(day => day.buckets.forEach(b => { if (b.calls > 0 || b.sales > 0) active.add(b.hour); }));
+    return Array.from(active).sort((a, b) => a - b);
+  }
+
+  function scaleCell(value, rowMax, varName) {
+    if (!value) return '';
+    const alpha = rowMax ? Math.max(15, Math.round(value / rowMax * 100)) : 0;
+    const fg = alpha > 60 ? '#fff' : 'inherit';
+    return ` style="background:color-mix(in srgb, var(${varName}) ${alpha}%, transparent); color:${fg}"`;
+  }
+  function missedPctCell(p, hasData) {
+    if (!hasData) return '';
+    // Low missed % is good (green) → high missed % is bad (red), same
+    // red→amber→green ramp used by the answer-rate heatmap, just inverted.
+    const c = heatColors(Math.max(0, Math.min(100, 100 - p)));
+    return ` style="background:${c.bg}; color:${c.fg}"`;
+  }
+
+  function matrixDayBlock(day, columns) {
+    const t = day.totals;
+    const salesMax = Math.max(0, ...columns.map(h => day.buckets[h].sales));
+    const missedMax = Math.max(0, ...columns.map(h => day.buckets[h].missed));
+    const dateLabel = day.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    const rowsDef = [
+      { key: 'sales', label: 'Sales', cell: h => { const v = day.buckets[h].sales; return `<td class="r"${scaleCell(v, salesMax, '--green')}>${v || ''}</td>`; }, total: int(t.sales) },
+      { key: 'answered', label: 'Answered', cell: h => { const v = day.buckets[h].answered; return `<td class="r">${v || ''}</td>`; }, total: int(t.answered) },
+      { key: 'missed', label: 'Missed', cell: h => { const v = day.buckets[h].missed; return `<td class="r"${scaleCell(v, missedMax, '--green')}>${v || ''}</td>`; }, total: int(t.missed) },
+      { key: 'missedPct', label: 'Missed %', cell: h => { const b = day.buckets[h]; const has = (b.answered + b.missed) > 0; return `<td class="r"${missedPctCell(b.missedPct, has)}>${has ? pct(b.missedPct, 2) : ''}</td>`; }, total: (t.answered + t.missed) ? pct(t.missedPct, 2) : '—' },
+    ];
+    return rowsDef.map((r, i) => `<tr class="${r.key === 'missedPct' ? 'matrix__pctrow' : ''}">
+      ${i === 0 ? `<td class="matrix__date" rowspan="4"><b>${dateLabel}</b></td>` : ''}
+      <td class="matrix__metric">${r.label}</td>
+      ${columns.map(r.cell).join('')}
+      <td class="r matrix__total"><b>${r.total}</b></td>
+    </tr>`).join('');
+  }
+
+  function matrixTotalsBlock(dayRows, columns) {
+    const grand = { sales: 0, answered: 0, missed: 0 };
+    const colTotals = columns.map(h => {
+      const c = { sales: 0, answered: 0, missed: 0 };
+      dayRows.forEach(day => { const b = day.buckets[h]; c.sales += b.sales; c.answered += b.answered; c.missed += b.missed; });
+      return c;
+    });
+    dayRows.forEach(day => { grand.sales += day.totals.sales; grand.answered += day.totals.answered; grand.missed += day.totals.missed; });
+    const grandPct = (grand.answered + grand.missed) ? grand.missed / (grand.answered + grand.missed) * 100 : 0;
+    const salesMax = Math.max(0, ...colTotals.map(c => c.sales));
+    const missedMax = Math.max(0, ...colTotals.map(c => c.missed));
+    const rowsDef = [
+      { label: 'Sales', cell: c => `<td class="r"${scaleCell(c.sales, salesMax, '--green')}>${c.sales || ''}</td>`, total: int(grand.sales) },
+      { label: 'Answered', cell: c => `<td class="r">${c.answered || ''}</td>`, total: int(grand.answered) },
+      { label: 'Missed', cell: c => `<td class="r"${scaleCell(c.missed, missedMax, '--green')}>${c.missed || ''}</td>`, total: int(grand.missed) },
+      { label: 'Missed %', cell: c => { const has = (c.answered + c.missed) > 0; const p = has ? c.missed / (c.answered + c.missed) * 100 : 0; return `<td class="r"${missedPctCell(p, has)}>${has ? pct(p, 2) : ''}</td>`; }, total: (grand.answered + grand.missed) ? pct(grandPct, 2) : '—' },
+    ];
+    return rowsDef.map((r, i) => `<tr class="matrix__totalrow ${r.label === 'Missed %' ? 'matrix__pctrow' : ''}">
+      ${i === 0 ? `<td class="matrix__date" rowspan="4"><b>Total</b></td>` : ''}
+      <td class="matrix__metric">${r.label}</td>
+      ${colTotals.map(r.cell).join('')}
+      <td class="r matrix__total"><b>${r.total}</b></td>
+    </tr>`).join('');
+  }
+
+  function renderDailyMatrix(dayRows) {
+    const el2 = $('#tbl_dailyMatrix'); if (!el2) return;
+    if (!dayRows.length) { el2.innerHTML = '<div class="empty">No calls or sales in the selected range.</div>'; return; }
+    const columns = matrixColumns(dayRows);
+    if (!columns.length) { el2.innerHTML = '<div class="empty">No hourly data in the selected range.</div>'; return; }
+    const pakOf = h => (h + 10) % 24;
+    const html = `<div class="matrixScroll"><table class="tbl matrix">
+      <thead>
+        <tr>
+          <th class="matrix__corner" rowspan="2">Date</th>
+          <th class="matrix__corner matrix__tzhdr">Pak Time</th>
+          ${columns.map(h => `<th>${pakLabel(pakOf(h))}</th>`).join('')}
+          <th class="r" rowspan="2">Grand Total</th>
+        </tr>
+        <tr>
+          <th class="matrix__corner matrix__tzhdr">Central Time</th>
+          ${columns.map(h => `<th>${ctLabel(h)}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${dayRows.map(day => matrixDayBlock(day, columns)).join('')}
+        ${matrixTotalsBlock(dayRows, columns)}
+      </tbody>
+    </table></div>`;
+    el2.innerHTML = html;
+  }
+
   function renderHourly(calls, sales) {
     if (!$('#page-hourly')) return;
-    const buckets = DataEngine.hourlyStats(calls, sales);
-    renderHourCalls(buckets);
-    renderHourSales(buckets);
-    renderHourlyTable(buckets);
+    // Top 3 widgets (Answer Rate heatmap, Sales heatmap, Hourly Detail
+    // Table) are pinned to TODAY and ignore the filter bar entirely —
+    // calls use the Daily Call Center Report's queue criteria, sales
+    // are untouched. The Daily x Hourly Breakdown matrix below still
+    // respects the filter bar (date range/queue/agent/result), since
+    // that one is meant for looking back over any range of days.
+    const today = DataEngine.todayHourlyStats();
+    renderHourCalls(today.buckets);
+    renderHourSales(today.buckets);
+    renderHourlyTable(today.buckets);
+    const lbl = $('#hourlyTodayLabel'); if (lbl) lbl.textContent = today.dateStr;
+    renderDailyMatrix(DataEngine.dailyHourlyMatrix(calls, sales));
+  }
+
+  // ---------------- Daily Call Center Report ----------------
+  function renderDailyReport(rows) {
+    const el2 = $('#tbl_dailyReport'); if (!el2) return;
+    if (!rows.length) { el2.innerHTML = '<div class="empty"><b>No data</b>None of the selected calls/sales belong to the reported call-center groups yet.</div>'; return; }
+    const salesMax = Math.max(0, ...rows.map(r => r.sales));
+    const grand = rows.reduce((a, r) => { a.calls += r.calls; a.answered += r.answered; a.missed += r.missed; a.sales += r.sales; return a; }, { calls: 0, answered: 0, missed: 0, sales: 0 });
+    const grandPct = (grand.answered + grand.missed) ? grand.missed / (grand.answered + grand.missed) * 100 : 0;
+    const html = `<div class="tbl-wrap"><table class="tbl">
+      <thead><tr>
+        <th>Date</th><th class="r">Total Calls</th><th class="r">Answered</th><th class="r">Missed</th>
+        <th class="r">Missed %</th><th class="r">Sales</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr>
+          <td><b>${DataEngine.fmtDateShort(r.date)}</b></td>
+          <td class="r">${int(r.calls)}</td>
+          <td class="r">${int(r.answered)}</td>
+          <td class="r">${int(r.missed)}</td>
+          <td class="r"${missedPctCell(r.missedPct, (r.answered + r.missed) > 0)}>${(r.answered + r.missed) ? pct(r.missedPct, 2) : '—'}</td>
+          <td class="r"${scaleCell(r.sales, salesMax, '--green')}>${int(r.sales)}</td>
+        </tr>`).join('')}
+        <tr class="matrix__totalrow">
+          <td><b>Total</b></td>
+          <td class="r"><b>${int(grand.calls)}</b></td>
+          <td class="r"><b>${int(grand.answered)}</b></td>
+          <td class="r"><b>${int(grand.missed)}</b></td>
+          <td class="r"${missedPctCell(grandPct, (grand.answered + grand.missed) > 0)}><b>${(grand.answered + grand.missed) ? pct(grandPct, 2) : '—'}</b></td>
+          <td class="r"><b>${int(grand.sales)}</b></td>
+        </tr>
+      </tbody>
+    </table></div>`;
+    el2.innerHTML = html;
   }
 
   // ---------------- Data health ----------------
