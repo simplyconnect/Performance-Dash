@@ -251,6 +251,16 @@
         </div>
       </section>
 
+      <!-- Daily Call Center Report -->
+      <div class="grid">
+        <div class="card c12" id="sec-dailyreport">
+          <div class="card__head">
+            <div><div class="card__title">Daily Call Center Report</div><div class="card__sub">Calls, Answered, Missed &amp; Sales per day — limited to the reported call-center groups (Group 44 Sales, Group 48, Group 56…)</div></div>
+          </div>
+          <div id="tbl_dailyReport"></div>
+        </div>
+      </div>
+
       <!-- Data health -->
       <div class="grid">
         <div class="card c12" id="sec-health">
@@ -267,7 +277,7 @@
       <div class="hourlyHead">
         <div>
           <h2 class="hourlyHead__title">Hourly Performance</h2>
-          <p class="hourlyHead__sub">Calls &amp; sales broken down hour-by-hour for the selected range and filters.</p>
+          <p class="hourlyHead__sub">Today (<span id="hourlyTodayLabel">—</span>) — calls &amp; sales hour-by-hour. This section ignores the filter bar above and always shows the current day.</p>
         </div>
         <div class="seg" data-group="hourlyTz">
           <button data-tz="ct" aria-pressed="true">Central Time</button>
@@ -291,9 +301,16 @@
 
       <div class="card c12">
         <div class="card__head">
-          <div><div class="card__title">Hourly Detail Table</div><div class="card__sub">Every hour in the selected range — calls, answer rate and sales side by side</div></div>
+          <div><div class="card__title">Hourly Detail Table</div><div class="card__sub">Every hour of today — calls, answer rate and sales side by side</div></div>
         </div>
         <div class="tbl-wrap" id="tbl_hourly"></div>
+      </div>
+
+      <div class="card c12">
+        <div class="card__head">
+          <div><div class="card__title">Daily × Hourly Breakdown</div><div class="card__sub">Sales, Answered, Missed (Abandoned) and Missed % — per day, per hour, in Pak Time &amp; Central Time</div></div>
+        </div>
+        <div id="tbl_dailyMatrix"></div>
       </div>
     </section>
   </div>
