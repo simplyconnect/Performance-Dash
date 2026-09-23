@@ -613,7 +613,7 @@
     }).join('');
     $$('.hourHeat__cell', el2).forEach(c => {
       c.addEventListener('mousemove', evt => {
-        Charts.showTip(evt, `<div class="t">${c.dataset.h}</div><b>${c.dataset.rate}%</b> answer rate<br/>${int(c.dataset.calls)} calls · ${int(c.dataset.ans)} answered · ${int(c.dataset.miss)} missed`);
+        Charts.showTip(evt, `<div class="t">${c.dataset.h}</div><b>${c.dataset.rate}%</b> answer rate<br/>${int(c.dataset.ans)} answered · ${int(c.dataset.miss)} missed`);
         Charts.moveTip(evt);
       });
       c.addEventListener('mouseleave', Charts.hideTip);
