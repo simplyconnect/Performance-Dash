@@ -513,3 +513,9 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 .tbl.matrix .matrix__date{ border-top:2px solid var(--matrix-block-border); border-bottom:2px solid var(--matrix-block-border) }
 .tbl.matrix tr.matrix__blockstart td{border-top:2px solid var(--matrix-block-border)}
 .tbl.matrix tr.matrix__blockend td{border-bottom:2px solid var(--matrix-block-border)}
+
+/* ---------- Global: center every piece of text in the dashboard ---------- */
+/* !important is needed here on purpose — dozens of more specific rules
+   above (.tbl th, .matrix__metric, card subtitles, etc.) set their own
+   text-align, and this is meant to win over all of them everywhere. */
+.app, .app *{ text-align:center !important }
