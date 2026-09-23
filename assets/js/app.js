@@ -786,31 +786,36 @@
   function renderDailyReport(rows) {
     const el2 = $('#tbl_dailyReport'); if (!el2) return;
     if (!rows.length) { el2.innerHTML = '<div class="empty"><b>No data</b>None of the selected calls/sales belong to the reported call-center groups yet.</div>'; return; }
-    const salesMax = Math.max(0, ...rows.map(r => r.sales));
-    const grand = rows.reduce((a, r) => { a.calls += r.calls; a.answered += r.answered; a.missed += r.missed; a.sales += r.sales; return a; }, { calls: 0, answered: 0, missed: 0, sales: 0 });
-    const grandPct = (grand.answered + grand.missed) ? grand.missed / (grand.answered + grand.missed) * 100 : 0;
-    const html = `<div class="tbl-wrap"><table class="tbl">
+    const grand = rows.reduce((a, r) => { a.totalCalls += r.totalCalls; a.answered += r.answered; a.missed += r.missed; a.sales += r.sales; a.rgu += r.rgu; return a; }, { totalCalls: 0, answered: 0, missed: 0, sales: 0, rgu: 0 });
+    const grandPct = grand.totalCalls ? grand.missed / grand.totalCalls * 100 : 0;
+    const allProviders = new Map();
+    rows.forEach(r => r.providerRows.forEach(p => { if (p.provider === '—') return; const g = allProviders.get(p.provider) || { provider: p.provider, sales: 0, rgu: 0 }; g.sales += p.sales; g.rgu += p.rgu; allProviders.set(p.provider, g); }));
+    const grandProviderRows = Array.from(allProviders.values()).sort((a, b) => b.sales - a.sales);
+
+    function dayBlock(r, isTotal) {
+      const n = r.providerRows.length;
+      return r.providerRows.map((p, i) => `<tr class="${i === 0 ? 'matrix__blockstart ' : ''}${i === n - 1 ? 'matrix__blockend' : ''}${isTotal ? ' matrix__totalrow' : ''}">
+        ${i === 0 ? `<td class="matrix__date"${n > 1 ? ` rowspan="${n}"` : ''}><b>${isTotal ? 'Total' : DataEngine.fmtDateShort(r.date)}</b></td>` : ''}
+        <td>${escapeHtml(p.provider)}</td>
+        <td class="r">${int(p.sales)}</td>
+        <td class="r">${int(p.rgu)}</td>
+        ${i === 0 ? `
+          <td class="r"${n > 1 ? ` rowspan="${n}"` : ''}><b>${int(r.totalCalls)}</b></td>
+          <td class="r"${n > 1 ? ` rowspan="${n}"` : ''}><b>${int(r.answered)}</b></td>
+          <td class="r"${n > 1 ? ` rowspan="${n}"` : ''}><b>${int(r.missed)}</b></td>
+          <td class="r"${n > 1 ? ` rowspan="${n}"` : ''}${missedPctCell(r.missedPct, r.totalCalls > 0)}><b>${r.totalCalls ? pct(r.missedPct, 2) : '—'}</b></td>
+        ` : ''}
+      </tr>`).join('');
+    }
+
+    const html = `<div class="matrixScroll"><table class="tbl matrix">
       <thead><tr>
-        <th>Date</th><th class="r">Total Calls</th><th class="r">Answered</th><th class="r">Missed</th>
-        <th class="r">Missed %</th><th class="r">Sales</th>
+        <th>Date</th><th>Provider</th><th class="r">Sales</th><th class="r">RGUs</th>
+        <th class="r">Total Calls</th><th class="r">Answered</th><th class="r">Missed</th><th class="r">Missed %</th>
       </tr></thead>
       <tbody>
-        ${rows.map(r => `<tr>
-          <td><b>${DataEngine.fmtDateShort(r.date)}</b></td>
-          <td class="r">${int(r.calls)}</td>
-          <td class="r">${int(r.answered)}</td>
-          <td class="r">${int(r.missed)}</td>
-          <td class="r"${missedPctCell(r.missedPct, (r.answered + r.missed) > 0)}>${(r.answered + r.missed) ? pct(r.missedPct, 2) : '—'}</td>
-          <td class="r"${scaleCell(r.sales, salesMax, '--green')}>${int(r.sales)}</td>
-        </tr>`).join('')}
-        <tr class="matrix__totalrow">
-          <td><b>Total</b></td>
-          <td class="r"><b>${int(grand.calls)}</b></td>
-          <td class="r"><b>${int(grand.answered)}</b></td>
-          <td class="r"><b>${int(grand.missed)}</b></td>
-          <td class="r"${missedPctCell(grandPct, (grand.answered + grand.missed) > 0)}><b>${(grand.answered + grand.missed) ? pct(grandPct, 2) : '—'}</b></td>
-          <td class="r"><b>${int(grand.sales)}</b></td>
-        </tr>
+        ${rows.map(r => dayBlock(r, false)).join('')}
+        ${dayBlock({ providerRows: grandProviderRows.length ? grandProviderRows.map(p => ({ provider: p.provider, sales: p.sales, rgu: p.rgu })) : [{ provider: '—', sales: 0, rgu: 0 }], totalCalls: grand.totalCalls, answered: grand.answered, missed: grand.missed, missedPct: grandPct }, true)}
       </tbody>
     </table></div>`;
     el2.innerHTML = html;
