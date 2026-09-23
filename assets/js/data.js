@@ -100,13 +100,22 @@ const DataEngine = (() => {
   // already parsed out of the sheet's "Time Frame" / "Timestamp" columns) ----
   // "Missed" = Call Result === 'Abandoned' only (not every non-Answered
   // result — Overflow/Stranded/Escaped/Transferred are neither). "Answered"
-  // = Call Result === 'Answered'. missedPct is the ratio between just these
-  // two (Missed / (Answered + Missed)), which is the standard abandon-rate
-  // formula and matches the "Missed %" row on the daily/hourly sheet.
+  // = Call Result === 'Answered'. Both counts (and the two percentages
+  // below) are restricted to REPORT_QUEUES — the same call-center queue
+  // group used by the Daily Call Center Report — and Abandoned calls from
+  // ABANDON_EXCLUDE_QUEUES never count as Missed. This keeps the Hourly
+  // page and the Daily × Hourly Breakdown in sync with that report instead
+  // of counting every queue.
+  // answerRate / missedPct are both out of the *decided* calls only
+  // (Answered + Missed — calls still ringing/transferred/etc. are excluded
+  // from the denominator), so the two always add up to 100%:
+  //   answerRate = Answered / (Answered + Missed) × 100
+  //   missedPct  = Missed   / (Answered + Missed) × 100
   function classifyCall(b, c) {
+    if (!REPORT_QUEUES.includes(c.queue)) return;
     b.calls++;
     if (c.result === 'Answered') b.answered++;
-    else if (c.result === 'Abandoned') b.missed++;
+    else if (c.result === 'Abandoned' && !ABANDON_EXCLUDE_QUEUES.includes(c.queue)) b.missed++;
   }
   function addSale(b, s) {
     b.sales++;
@@ -114,8 +123,8 @@ const DataEngine = (() => {
     b.rgu += Number(s.rgu) || 0;
   }
   function finalizeBucket(b) {
-    b.answerRate = b.calls ? b.answered / b.calls * 100 : 0;
     const decided = b.answered + b.missed;
+    b.answerRate = decided ? b.answered / decided * 100 : 0;
     b.missedPct = decided ? b.missed / decided * 100 : 0;
   }
 
