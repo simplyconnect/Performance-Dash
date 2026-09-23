@@ -22,6 +22,23 @@ def dur(t):
     if isinstance(t, dt.time): return t.hour * 3600 + t.minute * 60 + t.second
     return 0
 
+def hour_of(v):
+    """Best-effort hour (0-23) out of a time-ish cell — handles datetime.time,
+    datetime.datetime, '14:32', '2:32 PM', or a bare leading '14'. Returns
+    -1 if nothing usable is found (row is then skipped from hourly buckets,
+    same as the Calls sheet already does for an unparsable Time Frame)."""
+    if v is None or (isinstance(v, float) and pd.isna(v)): return -1
+    if isinstance(v, dt.datetime): return v.hour
+    if isinstance(v, dt.time): return v.hour
+    s = str(v).strip()
+    m = re.match(r"^(\d{1,2})", s)
+    if not m: return -1
+    h = int(m.group(1))
+    low = s.lower()
+    if "pm" in low and h != 12: h += 12
+    if "am" in low and h == 12: h = 0
+    return h if 0 <= h <= 23 else -1
+
 # ---------- CALLS ----------
 c = pd.read_excel(src, sheet_name="Calls Data")
 dq, da, dr = {}, {}, {}
@@ -60,11 +77,24 @@ canc = [x for x in s.columns if x.startswith("Previous Services Cancelled")][0]
 pt_cols = [x for x in s.columns if re.search(r"(points|ponts)$", x, re.I) and x.lower() != "total points"]
 def clean(v):
     return None if pd.isna(v) else str(v).strip()
+
+# Sale hour, for the Daily x Hourly matrix's "Sales" row — auto-detects a
+# time-ish column on the sales sheet (skips the "Date" column itself).
+# If your sheet's column isn't picked up correctly, hardcode it here, e.g.:
+#   sale_time_col = "Time Frame"
+_time_candidates = [c for c in s.columns if re.search(r"time|hour", c, re.I) and "date" not in c.lower()]
+sale_time_col = _time_candidates[0] if _time_candidates else None
+if sale_time_col:
+    print(f"Sales hour column detected: '{sale_time_col}' (used for the hourly Sales row)")
+else:
+    print("No time/hour column found on 'sales Data' — the Sales row of the Daily x Hourly "
+          "table will stay empty until one is added (see sale_time_col in this script).")
+
 sales = []
 for _, r in s.iterrows():
     d = day_num(r["Date"])
     if d is None: continue
-    o = {"d": d}
+    o = {"d": d, "h": hour_of(r[sale_time_col]) if sale_time_col else -1}
     for k, col in MAP.items(): o[k] = clean(r[col])
     o["cancelled"] = clean(r[canc])
     o["rgu"] = int(r["RGU's"]) if not pd.isna(r["RGU's"]) else 1
