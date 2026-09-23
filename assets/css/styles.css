@@ -505,3 +505,11 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 .tbl.matrix .matrix__totalrow .matrix__date, .tbl.matrix .matrix__totalrow .matrix__metric{background:var(--surface-3)}
 .tbl.matrix .matrix__totalrow td{border-top:2px solid var(--line-strong)}
 [data-theme="dark"] .tbl.matrix .matrix__date, [data-theme="dark"] .tbl.matrix .matrix__metric{background:var(--surface)}
+
+/* Bold black box around every date's 4-row block (Sales/Answered/Missed/
+   Missed %), so each day — and the Total block — reads as one clear unit. */
+:root{ --matrix-block-border:#000 }
+[data-theme="dark"]{ --matrix-block-border:#fff }
+.tbl.matrix .matrix__date{ border-top:2px solid var(--matrix-block-border); border-bottom:2px solid var(--matrix-block-border) }
+.tbl.matrix tr.matrix__blockstart td{border-top:2px solid var(--matrix-block-border)}
+.tbl.matrix tr.matrix__blockend td{border-bottom:2px solid var(--matrix-block-border)}
