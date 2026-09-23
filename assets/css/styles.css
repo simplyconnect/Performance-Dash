@@ -484,3 +484,24 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 
 .hourly-bar{position:relative; height:8px; border-radius:6px; background:var(--heat-0); overflow:hidden; min-width:90px}
 .hourly-bar i{position:absolute; inset:0 auto 0 0; border-radius:6px; background:var(--amber); transition:width .3s ease}
+
+/* ---------- Daily x Hourly matrix ---------- */
+.matrixScroll{overflow:auto; border:1px solid var(--line); border-radius:14px; max-height:640px}
+.tbl.matrix{font-size:12.5px; min-width:100%}
+.tbl.matrix th, .tbl.matrix td{white-space:nowrap; text-align:center; padding:7px 10px; border-bottom:1px solid var(--line); border-right:1px solid var(--line)}
+.tbl.matrix thead th{position:sticky; top:0; z-index:3; background:var(--surface-2); font-size:11px}
+.tbl.matrix thead tr:first-child th{top:0}
+.tbl.matrix thead tr:last-child th{top:29px}
+.tbl.matrix .matrix__corner{position:sticky; left:0; z-index:4; background:var(--surface-2); text-align:left}
+.tbl.matrix .matrix__tzhdr{left:0}
+.tbl.matrix .matrix__date{
+  position:sticky; left:0; z-index:2; background:var(--surface); text-align:left;
+  vertical-align:top; border-right:1px solid var(--line-strong); min-width:96px;
+}
+.tbl.matrix .matrix__metric{position:sticky; left:96px; z-index:2; background:var(--surface); text-align:left; color:var(--text-2); font-weight:600; min-width:84px; border-right:1px solid var(--line-strong)}
+.tbl.matrix tbody tr:hover td{filter:brightness(0.97)}
+.tbl.matrix .matrix__pctrow td{font-weight:700}
+.tbl.matrix .matrix__total{background:var(--surface-3); font-variant-numeric:tabular-nums}
+.tbl.matrix .matrix__totalrow .matrix__date, .tbl.matrix .matrix__totalrow .matrix__metric{background:var(--surface-3)}
+.tbl.matrix .matrix__totalrow td{border-top:2px solid var(--line-strong)}
+[data-theme="dark"] .tbl.matrix .matrix__date, [data-theme="dark"] .tbl.matrix .matrix__metric{background:var(--surface)}
