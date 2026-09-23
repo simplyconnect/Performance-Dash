@@ -607,13 +607,13 @@
       const c = b.calls === 0 ? { bg: 'var(--heat-0)', fg: 'var(--muted)' } : heatColors(b.answerRate);
       return `<div class="hourHeat__cell" style="background:${c.bg}; color:${c.fg}; animation-delay:${i * 14}ms" data-h="${b.label}" data-rate="${b.answerRate.toFixed(1)}" data-calls="${b.calls}" data-ans="${b.answered}" data-miss="${b.missed}">
         <div class="h">${b.label}</div>
-        <div class="v">${b.calls ? b.answerRate.toFixed(0) + '%' : '—'}</div>
-        <div class="n">${int(b.calls)} calls</div>
+        <div class="v">${int(b.answered)}</div>
+        <div class="n">answered</div>
       </div>`;
     }).join('');
     $$('.hourHeat__cell', el2).forEach(c => {
       c.addEventListener('mousemove', evt => {
-        Charts.showTip(evt, `<div class="t">${c.dataset.h}</div><b>${c.dataset.rate}%</b> answer rate<br/>${int(c.dataset.ans)} answered · ${int(c.dataset.miss)} missed`);
+        Charts.showTip(evt, `<div class="t">${c.dataset.h}</div><b>${int(c.dataset.ans)}</b> answered`);
         Charts.moveTip(evt);
       });
       c.addEventListener('mouseleave', Charts.hideTip);
