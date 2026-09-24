@@ -277,13 +277,21 @@
       <div class="hourlyHead">
         <div>
           <h2 class="hourlyHead__title">Hourly Performance</h2>
-          <p class="hourlyHead__sub">Today (<span id="hourlyTodayLabel">—</span>) — calls &amp; sales hour-by-hour. This section ignores the filter bar above and always shows the current day.</p>
+          <p class="hourlyHead__sub"><span id="hourlyDayLabel">Today</span> (<span id="hourlyTodayLabel">—</span>) — calls &amp; sales hour-by-hour. This section ignores the filter bar above.</p>
         </div>
-        <div class="seg" data-group="hourlyTz">
-          <button data-tz="ct" aria-pressed="true">Central Time</button>
-          <button data-tz="pkt" aria-pressed="false">Pakistan Time</button>
+        <div class="hourlyHead__controls">
+          <div class="seg" data-group="hourlyDay">
+            <button data-day="today" aria-pressed="true">Today</button>
+            <button data-day="yesterday" aria-pressed="false">Yesterday</button>
+          </div>
+          <div class="seg" data-group="hourlyTz">
+            <button data-tz="ct" aria-pressed="true">Central Time</button>
+            <button data-tz="pkt" aria-pressed="false">Pakistan Time</button>
+          </div>
         </div>
       </div>
+
+      <div class="card c12 tyCompare" id="tyCompare"></div>
 
       <div class="card c12">
         <div class="card__head">
@@ -301,7 +309,7 @@
 
       <div class="card c12">
         <div class="card__head">
-          <div><div class="card__title">Hourly Detail Table</div><div class="card__sub">Every hour of today — calls, answer rate and sales side by side</div></div>
+          <div><div class="card__title">Hourly Detail Table</div><div class="card__sub">Every hour — calls, answer rate and sales side by side</div></div>
         </div>
         <div class="tbl-wrap" id="tbl_hourly"></div>
       </div>
