@@ -275,7 +275,10 @@ svg{display:block}
 
 /* KPI cards */
 .kpis{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px}
-.kpi{border-radius:var(--r-lg); padding:18px 20px 18px; display:flex; flex-direction:column; gap:12px; min-width:0}
+.kpi{border-radius:var(--r-lg); padding:18px 20px 18px; display:flex; flex-direction:column; gap:12px; min-width:0; opacity:0; transform:translateY(10px); animation:kpiIn .45s cubic-bezier(.2,.7,.3,1) forwards}
+.kpis .kpi:nth-child(1){animation-delay:0ms} .kpis .kpi:nth-child(2){animation-delay:50ms} .kpis .kpi:nth-child(3){animation-delay:100ms} .kpis .kpi:nth-child(4){animation-delay:150ms}
+.kpis .kpi:nth-child(5){animation-delay:200ms} .kpis .kpi:nth-child(6){animation-delay:250ms} .kpis .kpi:nth-child(7){animation-delay:300ms} .kpis .kpi:nth-child(8){animation-delay:350ms}
+@keyframes kpiIn{to{opacity:1; transform:translateY(0)}}
 .kpi--1{background:var(--k1)} .kpi--2{background:var(--k2)} .kpi--3{background:var(--k3)} .kpi--4{background:var(--k4)}
 .kpi--5{background:var(--k5)} .kpi--6{background:var(--k6)} .kpi--7{background:var(--k7)} .kpi--8{background:var(--k8)}
 .kpi__top{display:flex; justify-content:space-between; align-items:center}
@@ -362,7 +365,10 @@ button.hbar:hover .hbar__track i{filter:brightness(1.08)}
 .rankmedal{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; font-size:15px; border-radius:50%; background:var(--surface-2); color:var(--muted); font-weight:800}
 .rankmedal--1,.rankmedal--2,.rankmedal--3{font-size:18px; background:transparent}
 .agentcell{display:flex; align-items:center; gap:10px}
-.agentava{width:28px; height:28px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:11px; flex:none}
+.agentcell--link{border:none; background:none; padding:0; font:inherit; color:inherit; text-align:left; cursor:pointer; border-radius:8px}
+.agentcell--link:hover{color:var(--amber-ink)}
+.agentcell--link:hover .agentava{box-shadow:0 0 0 2px var(--amber)}
+.agentava{width:28px; height:28px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:11px; flex:none; transition:box-shadow .15s}
 .cellbar{display:flex; align-items:center; gap:10px; justify-content:flex-end}
 .cellbar i{display:block; height:6px; border-radius:99px; background:var(--amber); min-width:2px}
 .badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11.5px; font-weight:700; background:var(--surface-3); color:var(--text-2)}
