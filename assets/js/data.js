@@ -154,6 +154,11 @@ const DataEngine = (() => {
   // Sales are every sale logged today — no queue restriction, since that
   // side of the sheet was already correct.
   function todayDateStr() { return new Date().toISOString().slice(0, 10); }
+  function yesterdayDateStr() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
 
   function todayHourlyStats(dateStr) {
     const day = dateStr || todayDateStr();
@@ -283,6 +288,6 @@ const DataEngine = (() => {
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
     filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats, dailyHourlyMatrix, dailyReport,
-    todayDateStr, todayHourlyStats, REPORT_QUEUES, ABANDON_EXCLUDE_QUEUES,
+    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, ABANDON_EXCLUDE_QUEUES,
   };
 })();
