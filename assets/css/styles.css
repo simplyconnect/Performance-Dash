@@ -369,6 +369,7 @@ button.hbar:hover .hbar__track i{filter:brightness(1.08)}
 .badge--good{background:var(--chip-up-bg); color:var(--chip-up-tx)}
 .badge--bad{background:var(--chip-dn-bg); color:var(--chip-dn-tx)}
 .badge--warn{background:var(--amber-soft); color:var(--amber-ink)}
+.ratepill{display:inline-block; padding:2px 9px; border-radius:999px; font-size:12.5px; font-weight:700}
 .pager{display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-top:10px; font-size:12.5px; color:var(--muted)}
 .pager button{height:30px; padding:0 12px; border-radius:999px; background:var(--surface-3); font-weight:600; color:var(--text)}
 .pager button[disabled]{opacity:.4; cursor:default}
@@ -514,8 +515,10 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 .tbl.matrix tr.matrix__blockstart td{border-top:2px solid var(--matrix-block-border)}
 .tbl.matrix tr.matrix__blockend td{border-bottom:2px solid var(--matrix-block-border)}
 
-/* ---------- Global: center every piece of text in the dashboard ---------- */
-/* !important is needed here on purpose — dozens of more specific rules
-   above (.tbl th, .matrix__metric, card subtitles, etc.) set their own
-   text-align, and this is meant to win over all of them everywhere. */
-.app, .app *{ text-align:center !important }
+/* ---------- Tables & the daily/hourly matrix: center every cell ---------- */
+/* Scoped to .tbl only (plain tables + the "tbl matrix" breakdown table) —
+   headings, card subtitles and the filter bar/slicer keep their normal
+   (left) alignment and are NOT touched by this. !important wins over the
+   more specific alignment rules above (.tbl thead th, .tbl .r,
+   .matrix__metric, etc.) which would otherwise still apply. */
+.tbl, .tbl *{ text-align:center !important }
