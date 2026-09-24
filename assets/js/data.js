@@ -30,6 +30,9 @@ const DataEngine = (() => {
   function fmtDateShort(dt) {
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   }
+  function fmtDateFull(dt) {
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  }
   function dow(dt) { return dt.getUTCDay(); } // 0 Sun..6 Sat
   const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -275,7 +278,7 @@ const DataEngine = (() => {
   }
 
   return {
-    load, ingest, dateFromNum, fmtDate, fmtDateShort, dow, DOW_LABELS, DAY,
+    load, ingest, dateFromNum, fmtDate, fmtDateShort, fmtDateFull, dow, DOW_LABELS, DAY,
     get calls() { return calls; }, get sales() { return sales; }, get bounds() { return bounds; },
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
