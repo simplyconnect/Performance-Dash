@@ -49,6 +49,8 @@
     tableSearch: { agents: '', queues: '', sales: '' },
     hourlyTZ: 'ct', // ct | pkt
     hourlyDay: 'today', // today | yesterday
+    agentPeriod: 'monthly', // daily | weekly | monthly | yearly
+    agentSelected: null,
     page: 'overview', // overview | hourly
   };
 
@@ -310,6 +312,7 @@
 
   // ---------------- Trend line (calls per bucket) ----------------
   function bucketKey(dt, granularity) {
+    if (granularity === 'yearly') return String(dt.getUTCFullYear());
     if (granularity === 'daily') return DataEngine.fmtDate(dt);
     if (granularity === 'monthly') return dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0');
     // weekly: ISO-ish week start (Sunday)
@@ -318,6 +321,7 @@
     return DataEngine.fmtDate(d);
   }
   function bucketLabel(key, granularity) {
+    if (granularity === 'yearly') return key;
     if (granularity === 'monthly') {
       const [y, m] = key.split('-');
       return new Date(Date.UTC(+y, +m - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
@@ -872,6 +876,163 @@
     el2.innerHTML = html;
   }
 
+  // ---------------- Agent Performance page ----------------
+  function populateAgentSelect() {
+    const sel = $('#agentPickSelect'); if (!sel) return;
+    const agents = DataEngine.distinctAgents();
+    if (!agents.length) return;
+    if (!state.agentSelected || !agents.includes(state.agentSelected)) {
+      // Default to the agent with the most answered calls, so the page
+      // opens on someone with real data rather than an empty A-Z pick.
+      const rows = computeAgentRows(DataEngine.calls, DataEngine.sales);
+      const top = rows.sort((a, b) => b.answered - a.answered)[0];
+      state.agentSelected = (top && top.agent) || agents[0];
+    }
+    sel.innerHTML = agents.map(a => `<option value="${escapeHtml(a)}"${a === state.agentSelected ? ' selected' : ''}>${escapeHtml(a)}</option>`).join('');
+  }
+
+  // One row per calendar day for the chosen agent (all history — this page
+  // ignores the filter bar, same as the Hourly page), which app.js then
+  // re-buckets into daily/weekly/monthly/yearly using the same bucketKey/
+  // bucketLabel helpers the main Trend chart uses.
+  function agentDailyRows(agentName) {
+    const map = new Map();
+    function ensure(dt) {
+      const k = DataEngine.fmtDate(dt);
+      if (!map.has(k)) map.set(k, { date: dt, calls: 0, answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0, sales: 0, points: 0, rgu: 0 });
+      return map.get(k);
+    }
+    DataEngine.calls.forEach(c => {
+      if (c.agent !== agentName) return;
+      const b = ensure(c.date); b.calls++;
+      if (c.result === 'Answered') { b.answered++; b.talk += c.talk; b.hold += c.hold; b.wrap += c.wrap; b.talkN++; }
+      else if (c.result === 'Abandoned') b.abandoned++;
+    });
+    DataEngine.sales.forEach(s => {
+      if (s.agent !== agentName) return;
+      const b = ensure(s.date); b.sales++; b.points += Number(s.total) || 0; b.rgu += Number(s.rgu) || 0;
+    });
+    return Array.from(map.values());
+  }
+
+  function agentBuckets(agentName, granularity) {
+    const daily = agentDailyRows(agentName);
+    const buckets = new Map();
+    daily.forEach(d => {
+      const k = bucketKey(d.date, granularity);
+      if (!buckets.has(k)) buckets.set(k, { key: k, calls: 0, answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0, sales: 0, points: 0, rgu: 0 });
+      const b = buckets.get(k);
+      b.calls += d.calls; b.answered += d.answered; b.abandoned += d.abandoned;
+      b.talk += d.talk; b.hold += d.hold; b.wrap += d.wrap; b.talkN += d.talkN;
+      b.sales += d.sales; b.points += d.points; b.rgu += d.rgu;
+    });
+    const keys = Array.from(buckets.keys()).sort();
+    return keys.map(k => {
+      const b = buckets.get(k);
+      const decided = b.answered + b.abandoned;
+      return {
+        ...b, label: bucketLabel(k, granularity),
+        aht: b.talkN ? (b.talk + b.hold + b.wrap) / b.talkN : 0,
+        answerRate: decided ? b.answered / decided * 100 : 0,
+      };
+    });
+  }
+
+  function renderAgentKpis(agentName) {
+    const el2 = $('#agentKpiRow'); if (!el2) return;
+    const all = agentBuckets(agentName, 'yearly'); // coarsest granularity = fastest way to get true totals
+    const t = all.reduce((a, b) => { a.answered += b.answered; a.abandoned += b.abandoned; a.talk += b.talk; a.hold += b.hold; a.wrap += b.wrap; a.talkN += b.talkN; a.sales += b.sales; a.points += b.points; a.rgu += b.rgu; return a; },
+      { answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0, sales: 0, points: 0, rgu: 0 });
+    const decided = t.answered + t.abandoned;
+    const answerRate = decided ? t.answered / decided * 100 : 0;
+    const aht = t.talkN ? (t.talk + t.hold + t.wrap) / t.talkN : 0;
+    const conv = t.answered ? t.sales / t.answered * 100 : 0;
+    const items = [
+      { k: 1, ico: 'phone', label: 'Calls Handled', value: int(t.answered) },
+      { k: 2, ico: 'check', label: 'Answer Rate', value: pct(answerRate) },
+      { k: 3, ico: 'clock', label: 'Avg Handling Time', value: hms(aht) },
+      { k: 5, ico: 'cart', label: 'Sales Closed', value: int(t.sales) + ` <small>${pct(conv, 0)}</small>` },
+      { k: 6, ico: 'layers', label: 'RGUs Sold', value: int(t.rgu) },
+      { k: 8, ico: 'star', label: 'Total Points', value: int(t.points) },
+    ];
+    el2.innerHTML = items.map(it => `
+      <div class="kpi kpi--${it.k}">
+        <div class="kpi__top"><div class="kpi__ico">${icon(it.ico)}</div></div>
+        <div class="kpi__label">${it.label}</div>
+        <div class="kpi__row"><div class="kpi__value">${it.value}</div></div>
+      </div>`).join('');
+  }
+
+  function renderAgentRank(agentName) {
+    const el2 = $('#agentRankRow'); if (!el2) return;
+    const rows = computeAgentRows(DataEngine.calls, DataEngine.sales);
+    const n = rows.length || 1;
+    function rankOf(sortKey) {
+      const sorted = [...rows].sort((a, b) => b[sortKey] - a[sortKey]);
+      const idx = sorted.findIndex(r => r.agent === agentName);
+      return idx < 0 ? null : idx + 1;
+    }
+    const items = [
+      { label: 'Rank by Sales', rank: rankOf('salesCount') },
+      { label: 'Rank by RGUs', rank: rankOf('rgu') },
+      { label: 'Rank by Points', rank: rankOf('points') },
+      { label: 'Rank by Calls Handled', rank: rankOf('answered') },
+    ];
+    el2.innerHTML = items.map((it, i) => `
+      <div class="agentRank" style="animation-delay:${i * 60}ms">
+        <div class="agentRank__badge">${it.rank ? '#' + it.rank : '—'}</div>
+        <div class="agentRank__text">
+          <div class="agentRank__label">${it.label}</div>
+          <div class="agentRank__value">of ${n} agents</div>
+        </div>
+      </div>`).join('');
+  }
+
+  function renderAgentTrend(agentName, granularity) {
+    const rows = agentBuckets(agentName, granularity);
+    const labels = rows.map(r => r.label);
+    const series = [
+      { name: 'Calls handled', values: rows.map(r => r.answered), color: COLORS.green },
+      { name: 'Sales closed', values: rows.map(r => r.sales), color: COLORS.amber },
+    ];
+    Charts.lineChart($('#agentTrendChart'), { labels, series, height: 260 });
+    $('#agentTrendLegend').innerHTML = series.map(s => `<span><i style="background:${s.color}"></i>${s.name}</span>`).join('');
+  }
+
+  function renderAgentPeriodTable(agentName, granularity) {
+    const el2 = $('#tbl_agentPeriods'); if (!el2) return;
+    const rows = agentBuckets(agentName, granularity).slice().reverse(); // most recent first
+    if (!rows.length) { el2.innerHTML = '<div class="empty"><b>No data</b>This agent has no calls or sales on file yet.</div>'; return; }
+    const maxCalls = Math.max(1, ...rows.map(r => r.answered));
+    el2.innerHTML = `<table class="tbl">
+      <thead><tr>
+        <th>${granularity === 'daily' ? 'Date' : granularity === 'weekly' ? 'Week of' : granularity === 'yearly' ? 'Year' : 'Month'}</th>
+        <th class="r">Calls Handled</th><th class="r">Answer Rate</th><th class="r">Sales</th>
+        <th class="r">RGUs</th><th class="r">Points</th><th>Volume</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td><b>${r.label}</b></td>
+        <td class="r">${int(r.answered)}</td>
+        <td class="r">${(r.answered + r.abandoned) ? pct(r.answerRate, 0) : '—'}</td>
+        <td class="r">${int(r.sales)}</td>
+        <td class="r">${int(r.rgu)}</td>
+        <td class="r">${int(r.points)}</td>
+        <td><div class="hourly-bar"><i style="width:${(r.answered / maxCalls * 100).toFixed(1)}%"></i></div></td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+
+  function renderAgentPerf() {
+    if (!$('#page-agents')) return;
+    populateAgentSelect();
+    const agent = state.agentSelected;
+    if (!agent) return;
+    renderAgentKpis(agent);
+    renderAgentRank(agent);
+    renderAgentTrend(agent, state.agentPeriod);
+    renderAgentPeriodTable(agent, state.agentPeriod);
+  }
+
   // ---------------- Data health ----------------
   function renderDataHealth(calls, sales) {
     const el2 = $('#dataHealth'); if (!el2) return;
@@ -974,16 +1135,35 @@
         renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
       });
     });
+
+    // Agent Performance tab
+    $('#rail_agentperf').addEventListener('click', () => switchPage('agentperf'));
+    $('#agentPickSelect').addEventListener('change', e => {
+      state.agentSelected = e.target.value;
+      renderAgentPerf();
+    });
+    $$('.seg[data-group="agentPeriod"] button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setActiveSeg('agentPeriod', btn);
+        state.agentPeriod = btn.dataset.period;
+        renderAgentPerf();
+      });
+    });
   }
 
   function switchPage(id) {
     state.page = id;
     $('#top').hidden = id !== 'overview';
     $('#page-hourly').hidden = id !== 'hourly';
+    $('#page-agents').hidden = id !== 'agentperf';
     $$('.rail__btn[data-goto], .rail__btn[data-page]').forEach(b => b.removeAttribute('aria-current'));
     if (id === 'hourly') {
       $('#rail_hourly').setAttribute('aria-current', 'page');
       renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (id === 'agentperf') {
+      $('#rail_agentperf').setAttribute('aria-current', 'page');
+      renderAgentPerf();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       $('.rail__btn[data-goto="top"]').setAttribute('aria-current', 'page');
