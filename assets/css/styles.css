@@ -491,8 +491,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 .tbl.matrix{font-size:12.5px; min-width:100%}
 .tbl.matrix th, .tbl.matrix td{white-space:nowrap; text-align:center; padding:7px 10px; border-bottom:1px solid var(--line); border-right:1px solid var(--line)}
 .tbl.matrix thead th{position:sticky; top:0; z-index:3; background:var(--surface-2); font-size:11px}
-.tbl.matrix thead tr:first-child th{top:0}
-.tbl.matrix thead tr:last-child th{top:29px}
+.tbl.matrix thead tr:nth-child(2) th{top:29px}
 .tbl.matrix .matrix__corner{position:sticky; left:0; z-index:4; background:var(--surface-2); text-align:left}
 .tbl.matrix .matrix__tzhdr{left:0}
 .tbl.matrix .matrix__date{
