@@ -48,6 +48,7 @@
     tableSort: { agents: { key: 'perf', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' } },
     tableSearch: { agents: '', queues: '', sales: '' },
     hourlyTZ: 'ct', // ct | pkt
+    hourlyDay: 'today', // today | yesterday
     page: 'overview', // overview | hourly
   };
 
@@ -768,19 +769,67 @@
     el2.innerHTML = html;
   }
 
+  function tyDelta(curr, prev) {
+    if (!prev) return { cls: 'flat', text: '—' };
+    if (curr === prev) return { cls: 'flat', text: '±0' };
+    const diff = curr - prev;
+    const pctChange = prev !== 0 ? Math.abs(diff / prev * 100) : 100;
+    const cls = diff > 0 ? 'up' : 'down';
+    const arrow = diff > 0 ? '▲' : '▼';
+    return { cls, text: `${arrow} ${pctChange.toFixed(0)}% vs ${prev === curr ? 'same' : (state.hourlyDay === 'today' ? 'yesterday' : 'the day before')}` };
+  }
+
+  function renderTYCompare(todayBuckets, yestBuckets) {
+    const el2 = $('#tyCompare'); if (!el2) return;
+    const sum = buckets => buckets.reduce((a, b) => {
+      a.calls += b.calls; a.answered += b.answered; a.missed += b.missed;
+      a.sales += b.sales; a.rgu += b.rgu; return a;
+    }, { calls: 0, answered: 0, missed: 0, sales: 0, rgu: 0 });
+    const t = sum(todayBuckets), y = sum(yestBuckets);
+    const items = [
+      { label: 'Answered — Today', value: t.answered, cmp: y.answered },
+      { label: 'Answered — Yesterday', value: y.answered, cmp: null },
+      { label: 'Sales — Today', value: t.sales, cmp: y.sales },
+      { label: 'Sales — Yesterday', value: y.sales, cmp: null },
+      { label: 'RGUs — Today', value: t.rgu, cmp: y.rgu },
+      { label: 'RGUs — Yesterday', value: y.rgu, cmp: null },
+      { label: 'Missed — Today', value: t.missed, cmp: y.missed },
+      { label: 'Missed — Yesterday', value: y.missed, cmp: null },
+    ];
+    el2.innerHTML = items.map((it, i) => {
+      const d = it.cmp != null ? tyDelta(it.value, it.cmp) : null;
+      return `<div class="tyCompare__item" style="animation-delay:${i * 30}ms">
+        <div class="tyCompare__label">${it.label}</div>
+        <div class="tyCompare__value">${int(it.value)}</div>
+        ${d ? `<span class="tyCompare__delta ${d.cls}">${d.text}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
   function renderHourly(calls, sales) {
     if (!$('#page-hourly')) return;
     // Top 3 widgets (Answer Rate heatmap, Sales heatmap, Hourly Detail
-    // Table) are pinned to TODAY and ignore the filter bar entirely —
-    // calls use the Daily Call Center Report's queue criteria, sales
-    // are untouched. The Daily x Hourly Breakdown matrix below still
-    // respects the filter bar (date range/queue/agent/result), since
-    // that one is meant for looking back over any range of days.
-    const today = DataEngine.todayHourlyStats();
-    renderHourCalls(today.buckets);
-    renderHourSales(today.buckets);
-    renderHourlyTable(today.buckets);
-    const lbl = $('#hourlyTodayLabel'); if (lbl) lbl.textContent = today.dateStr;
+    // Table) are pinned to TODAY or YESTERDAY (via the Today/Yesterday
+    // toggle) and ignore the filter bar entirely — calls use the Daily
+    // Call Center Report's queue criteria, sales are untouched. The
+    // comparison strip always shows both days side by side regardless of
+    // which one is selected below. The Daily x Hourly Breakdown matrix
+    // further down still respects the filter bar (date range/queue/
+    // agent/result), since that one is meant for looking back over any
+    // range of days.
+    const todayStr = DataEngine.todayDateStr();
+    const yestStr = DataEngine.yesterdayDateStr();
+    const today = DataEngine.todayHourlyStats(todayStr);
+    const yesterday = DataEngine.todayHourlyStats(yestStr);
+    const selected = state.hourlyDay === 'yesterday' ? yesterday : today;
+
+    renderHourCalls(selected.buckets);
+    renderHourSales(selected.buckets);
+    renderHourlyTable(selected.buckets);
+    renderTYCompare(today.buckets, yesterday.buckets);
+
+    const dayLbl = $('#hourlyDayLabel'); if (dayLbl) dayLbl.textContent = state.hourlyDay === 'yesterday' ? 'Yesterday' : 'Today';
+    const lbl = $('#hourlyTodayLabel'); if (lbl) lbl.textContent = selected.dateStr;
     renderDailyMatrix(DataEngine.dailyHourlyMatrix(calls, sales));
   }
 
@@ -915,6 +964,13 @@
       btn.addEventListener('click', () => {
         setActiveSeg('hourlyTz', btn);
         state.hourlyTZ = btn.dataset.tz;
+        renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
+      });
+    });
+    $$('.seg[data-group="hourlyDay"] button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setActiveSeg('hourlyDay', btn);
+        state.hourlyDay = btn.dataset.day;
         renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
       });
     });
