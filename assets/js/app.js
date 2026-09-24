@@ -405,6 +405,7 @@
       avgHold: r.talkN ? r.hold / r.talkN : 0,
       avgWrap: r.talkN ? r.wrap / r.talkN : 0,
       share: 0,
+      convRate: r.answered ? r.salesCount / r.answered * 100 : 0, // Sales as a % of calls handled
       perf: (r.points || 0) + (r.rgu || 0), // blended sales score, used for default ranking
     }));
   }
@@ -447,6 +448,7 @@
             </span>` },
         { key: 'answered', label: 'Calls Handled', cls: 'r' },
         { key: 'salesCount', label: 'Sales', cls: 'r' },
+        { key: 'convRate', label: 'Sales %', cls: 'r', render: r => { const c = heatColors(Math.max(0, Math.min(100, r.convRate))); return `<span class="ratepill" style="background:${c.bg}; color:${c.fg}">${pct(r.convRate, 1)}</span>`; } },
         { key: 'rgu', label: 'RGUs', cls: 'r', render: r => int(r.rgu) },
         { key: 'points', label: 'Total Points', cls: 'r', render: r => int(r.points) },
         { key: 'aht', label: 'AHT', cls: 'r', render: r => hmsShort(r.aht) },
@@ -795,7 +797,7 @@
     function dayBlock(r, isTotal) {
       const n = r.providerRows.length;
       return r.providerRows.map((p, i) => `<tr class="${i === 0 ? 'matrix__blockstart ' : ''}${i === n - 1 ? 'matrix__blockend' : ''}${isTotal ? ' matrix__totalrow' : ''}">
-        ${i === 0 ? `<td class="matrix__date"${n > 1 ? ` rowspan="${n}"` : ''}><b>${isTotal ? 'Total' : DataEngine.fmtDateShort(r.date)}</b></td>` : ''}
+        ${i === 0 ? `<td class="matrix__date"${n > 1 ? ` rowspan="${n}"` : ''}><b>${isTotal ? 'Total' : DataEngine.fmtDateFull(r.date)}</b></td>` : ''}
         <td>${escapeHtml(p.provider)}</td>
         <td class="r">${int(p.sales)}</td>
         <td class="r">${int(p.rgu)}</td>
