@@ -447,10 +447,10 @@
       cols: [
         { key: 'rank', label: '#', cls: 'rank', render: (r, i) => rankBadge(i), sortable: false },
         { key: 'agent', label: 'Agent', cls: 'grow', render: r => `
-            <span class="agentcell">
+            <button type="button" class="agentcell agentcell--link js-open-agent" data-agent="${escapeHtml(r.agent)}" title="View ${escapeHtml(r.agent)}'s performance">
               <span class="agentava" style="background:${avaColor(r.agent)}">${escapeHtml(initials(r.agent))}</span>
               <span>${escapeHtml(r.agent)}</span>
-            </span>` },
+            </button>` },
         { key: 'answered', label: 'Calls Handled', cls: 'r' },
         { key: 'salesCount', label: 'Sales', cls: 'r' },
         { key: 'convRate', label: 'Sales %', cls: 'r', render: r => { const c = heatColors(Math.max(0, Math.min(100, r.convRate))); return `<span class="ratepill" style="background:${c.bg}; color:${c.fg}">${pct(r.convRate, 1)}</span>`; } },
@@ -938,6 +938,37 @@
     });
   }
 
+  // Per Group/Campaign ("gRP...") breakdown for one agent, full history —
+  // which call-center groups this agent actually worked, and how they did
+  // in each one. Sales are matched to a queue via the same campaign-name
+  // matching used in the Daily Call Center Report.
+  function agentQueueBreakdown(agentName) {
+    const map = new Map(); // queue -> row
+    function ensure(q) {
+      if (!map.has(q)) map.set(q, { queue: q, calls: 0, answered: 0, abandoned: 0, sales: 0, points: 0, rgu: 0 });
+      return map.get(q);
+    }
+    DataEngine.calls.forEach(c => {
+      if (c.agent !== agentName || !c.queue) return;
+      const b = ensure(c.queue);
+      b.calls++;
+      if (c.result === 'Answered') b.answered++;
+      else if (c.result === 'Abandoned') b.abandoned++;
+    });
+    DataEngine.sales.forEach(s => {
+      if (s.agent !== agentName || !s.campaign) return;
+      // Match the sale's campaign to a queue this agent has calls in, the
+      // same way the Daily Call Center Report ties campaigns to groups.
+      let q = Array.from(map.keys()).find(k => k === s.campaign || s.campaign.startsWith(k.split(' ')[0]));
+      if (!q) q = s.campaign; // agent sold under a campaign with no matching call queue on file
+      const b = ensure(q);
+      b.sales++; b.points += Number(s.total) || 0; b.rgu += Number(s.rgu) || 0;
+    });
+    return Array.from(map.values())
+      .map(r => ({ ...r, answerRate: (r.answered + r.abandoned) ? r.answered / (r.answered + r.abandoned) * 100 : 0 }))
+      .sort((a, b) => b.calls - a.calls || b.sales - a.sales);
+  }
+
   function renderAgentKpis(agentName) {
     const el2 = $('#agentKpiRow'); if (!el2) return;
     const all = agentBuckets(agentName, 'yearly'); // coarsest granularity = fastest way to get true totals
@@ -1022,6 +1053,29 @@
     </table>`;
   }
 
+  function renderAgentQueueBreakdown(agentName) {
+    const el2 = $('#tbl_agentQueues'); if (!el2) return;
+    const rows = agentQueueBreakdown(agentName);
+    if (!rows.length) { el2.innerHTML = '<div class="empty"><b>No data</b>This agent has no calls logged against a Group/Campaign yet.</div>'; return; }
+    const maxCalls = Math.max(1, ...rows.map(r => r.calls));
+    el2.innerHTML = `<table class="tbl">
+      <thead><tr>
+        <th>Group / Campaign</th><th class="r">Calls</th><th class="r">Answered</th><th class="r">Answer Rate</th>
+        <th class="r">Sales</th><th class="r">RGUs</th><th class="r">Points</th><th>Share</th>
+      </tr></thead>
+      <tbody>${rows.map((r, i) => `<tr style="animation:tyIn .3s cubic-bezier(.2,.7,.3,1) forwards; animation-delay:${i * 35}ms; opacity:0">
+        <td><b>${escapeHtml(r.queue)}</b></td>
+        <td class="r">${int(r.calls)}</td>
+        <td class="r">${int(r.answered)}</td>
+        <td class="r">${(r.answered + r.abandoned) ? pct(r.answerRate, 0) : '—'}</td>
+        <td class="r">${int(r.sales)}</td>
+        <td class="r">${int(r.rgu)}</td>
+        <td class="r">${int(r.points)}</td>
+        <td><div class="hourly-bar"><i style="width:${(r.calls / maxCalls * 100).toFixed(1)}%"></i></div></td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+
   function renderAgentPerf() {
     if (!$('#page-agents')) return;
     populateAgentSelect();
@@ -1031,6 +1085,7 @@
     renderAgentRank(agent);
     renderAgentTrend(agent, state.agentPeriod);
     renderAgentPeriodTable(agent, state.agentPeriod);
+    renderAgentQueueBreakdown(agent);
   }
 
   // ---------------- Data health ----------------
@@ -1134,6 +1189,15 @@
         state.hourlyDay = btn.dataset.day;
         renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
       });
+    });
+
+    // Click an agent's name anywhere (All Agents table) to jump straight
+    // into their dedicated Agent Performance page.
+    document.addEventListener('click', e => {
+      const el = e.target.closest('.js-open-agent');
+      if (!el) return;
+      state.agentSelected = el.dataset.agent;
+      switchPage('agentperf');
     });
 
     // Agent Performance tab
