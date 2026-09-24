@@ -275,10 +275,7 @@ svg{display:block}
 
 /* KPI cards */
 .kpis{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px}
-.kpi{border-radius:var(--r-lg); padding:18px 20px 18px; display:flex; flex-direction:column; gap:12px; min-width:0; opacity:0; transform:translateY(10px); animation:kpiIn .45s cubic-bezier(.2,.7,.3,1) forwards}
-.kpis .kpi:nth-child(1){animation-delay:0ms} .kpis .kpi:nth-child(2){animation-delay:50ms} .kpis .kpi:nth-child(3){animation-delay:100ms} .kpis .kpi:nth-child(4){animation-delay:150ms}
-.kpis .kpi:nth-child(5){animation-delay:200ms} .kpis .kpi:nth-child(6){animation-delay:250ms} .kpis .kpi:nth-child(7){animation-delay:300ms} .kpis .kpi:nth-child(8){animation-delay:350ms}
-@keyframes kpiIn{to{opacity:1; transform:translateY(0)}}
+.kpi{border-radius:var(--r-lg); padding:18px 20px 18px; display:flex; flex-direction:column; gap:12px; min-width:0}
 .kpi--1{background:var(--k1)} .kpi--2{background:var(--k2)} .kpi--3{background:var(--k3)} .kpi--4{background:var(--k4)}
 .kpi--5{background:var(--k5)} .kpi--6{background:var(--k6)} .kpi--7{background:var(--k7)} .kpi--8{background:var(--k8)}
 .kpi__top{display:flex; justify-content:space-between; align-items:center}
@@ -365,10 +362,7 @@ button.hbar:hover .hbar__track i{filter:brightness(1.08)}
 .rankmedal{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; font-size:15px; border-radius:50%; background:var(--surface-2); color:var(--muted); font-weight:800}
 .rankmedal--1,.rankmedal--2,.rankmedal--3{font-size:18px; background:transparent}
 .agentcell{display:flex; align-items:center; gap:10px}
-.agentcell--link{border:none; background:none; padding:0; font:inherit; color:inherit; text-align:left; cursor:pointer; border-radius:8px}
-.agentcell--link:hover{color:var(--amber-ink)}
-.agentcell--link:hover .agentava{box-shadow:0 0 0 2px var(--amber)}
-.agentava{width:28px; height:28px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:11px; flex:none; transition:box-shadow .15s}
+.agentava{width:28px; height:28px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:11px; flex:none}
 .cellbar{display:flex; align-items:center; gap:10px; justify-content:flex-end}
 .cellbar i{display:block; height:6px; border-radius:99px; background:var(--amber); min-width:2px}
 .badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11.5px; font-weight:700; background:var(--surface-3); color:var(--text-2)}
@@ -474,50 +468,6 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 .hourlyHead{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:12px}
 .hourlyHead__title{font-size:20px; font-weight:800; margin:0 0 4px}
 .hourlyHead__sub{margin:0; color:var(--muted); font-size:13px}
-.hourlyHead__controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
-
-/* ---------- Today vs Yesterday comparison strip ---------- */
-.tyCompare{display:flex; gap:10px; flex-wrap:wrap}
-.tyCompare__item{
-  flex:1 1 140px; min-width:132px; border-radius:14px; padding:12px 14px;
-  background:var(--surface-2); display:flex; flex-direction:column; gap:4px;
-  opacity:0; transform:translateY(6px); animation:tyIn .35s cubic-bezier(.2,.7,.3,1) forwards;
-}
-.tyCompare__label{font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.03em}
-.tyCompare__value{font-size:22px; font-weight:800; font-variant-numeric:tabular-nums}
-.tyCompare__delta{font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:3px}
-.tyCompare__delta.up{color:var(--green)}
-.tyCompare__delta.down{color:var(--rose)}
-.tyCompare__delta.flat{color:var(--muted)}
-@keyframes tyIn{to{opacity:1; transform:translateY(0)}}
-
-/* ---------- Agent Performance page ---------- */
-.agentPick{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); font-weight:600}
-.agentPick select{
-  appearance:none; -webkit-appearance:none; border:1px solid var(--line-strong); border-radius:10px;
-  padding:8px 30px 8px 12px; font:inherit; font-weight:700; font-size:13.5px; color:var(--text);
-  background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239AA0B4' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center/16px;
-  cursor:pointer; min-width:180px; transition:border-color .15s ease;
-}
-.agentPick select:hover{border-color:var(--amber)}
-
-.agentRankRow{display:flex; gap:12px; flex-wrap:wrap}
-.agentRank{
-  flex:1 1 200px; min-width:180px; border-radius:16px; padding:14px 16px;
-  background:linear-gradient(135deg, var(--surface-2), var(--surface));
-  border:1px solid var(--line); display:flex; align-items:center; gap:12px;
-  opacity:0; transform:translateY(8px) scale(.97);
-  animation:agentRankIn .4s cubic-bezier(.2,.7,.3,1) forwards;
-}
-.agentRank__badge{
-  width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-  font-weight:800; font-size:15px; color:#fff; background:linear-gradient(135deg, var(--amber), #ff8a00);
-  flex-shrink:0; box-shadow:0 4px 12px rgba(253,172,0,.35);
-}
-.agentRank__text{display:flex; flex-direction:column; gap:1px}
-.agentRank__label{font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.03em}
-.agentRank__value{font-size:15px; font-weight:800}
-@keyframes agentRankIn{to{opacity:1; transform:translateY(0) scale(1)}}
 
 .hourHeat{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px}
 .hourHeat__cell{
