@@ -48,11 +48,15 @@ const DataEngine = (() => {
   const LAST_GOOD_KEY = 'sc_last_good_feed';
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  async function fetchJson(url, attempts = 3) {
+  async function fetchJson(url, attempts = 3, forceFresh = false) {
     let lastErr;
     for (let i = 0; i < attempts; i++) {
       try {
-        const bust = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now();
+        // nocache=1 tells Code.gs's doGet() to skip its own 2-minute
+        // CacheService read and pull straight from the sheet — without this,
+        // Apps Script can hand back the same response for up to 120s no
+        // matter how many times (or how hard) the frontend re-requests it.
+        const bust = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now() + (forceFresh ? '&nocache=1' : '');
         const res = await fetch(bust, { cache: 'no-store' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const json = await res.json();
@@ -66,8 +70,8 @@ const DataEngine = (() => {
     throw lastErr;
   }
 
-  async function load(url) {
-    const json = await fetchJson(url);
+  async function load(url, forceFresh = false) {
+    const json = await fetchJson(url, 3, forceFresh);
     try { localStorage.setItem(LAST_GOOD_KEY, JSON.stringify({ json, savedAt: Date.now() })); } catch (e) { /* storage full/unavailable — ignore */ }
     return ingest(json);
   }
