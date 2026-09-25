@@ -199,21 +199,6 @@
         </div>
       </div>
 
-      <!-- Agent table -->
-      <div class="grid">
-        <div class="card c12" id="sec-agents">
-          <div class="card__head">
-            <div><div class="card__title">All Agents</div><div class="card__sub">Calls + sales performance per agent — handling time only counts answered calls; Sales % = sales ÷ calls handled; points/RGUs come from the sales sheet</div></div>
-          </div>
-          <div class="tbl-tools">
-            <input class="tbl-search" id="search_agents" placeholder="Search agent…" />
-            <span class="tbl-count" id="count_agents"></span>
-          </div>
-          <div class="tbl-wrap" id="tbl_agents"></div>
-          <div class="pager" id="pager_agents"></div>
-        </div>
-      </div>
-
       <!-- Sales section -->
       <section aria-label="Sales performance" id="sec-sales" class="salesSection">
         <h2 class="salesSection__title">Sales Performance</h2>
@@ -340,10 +325,18 @@
         </div>
       </div>
 
-      <!-- All Agents leaderboard (same table as Overview, always full history) -->
+      <!-- All Agents leaderboard — landing view of this tab, with its own Daily/Weekly/Monthly/All range -->
       <div class="card c12" id="sec-agentsPerf">
         <div class="card__head">
           <div><div class="card__title">All Agents</div><div class="card__sub">Calls + sales performance per agent — handling time only counts answered calls; Sales % = sales ÷ calls handled; points/RGUs come from the sales sheet</div></div>
+          <div class="card__tools">
+            <div class="seg seg--sm" data-group="agentsPerfRange">
+              <button data-arange="daily" aria-pressed="false">Daily</button>
+              <button data-arange="weekly" aria-pressed="false">Weekly</button>
+              <button data-arange="monthly" aria-pressed="false">Monthly</button>
+              <button data-arange="all" aria-pressed="true">All</button>
+            </div>
+          </div>
         </div>
         <div class="tbl-tools">
           <input class="tbl-search" id="search_agentsPerf" placeholder="Search agent…" />
