@@ -44,9 +44,9 @@
     compare: true,
     theme: localStorage.getItem('sc_theme') || 'light',
     trendMetric: 'volume', // volume | result
-    tablePage: { agents: 1, queues: 1, sales: 1 },
-    tableSort: { agents: { key: 'perf', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' } },
-    tableSearch: { agents: '', queues: '', sales: '' },
+    tablePage: { agents: 1, queues: 1, sales: 1, agentsPerf: 1 },
+    tableSort: { agents: { key: 'perf', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' }, agentsPerf: { key: 'perf', dir: 'desc' } },
+    tableSearch: { agents: '', queues: '', sales: '', agentsPerf: '' },
     hourlyTZ: 'ct', // ct | pkt
     hourlyDay: 'today', // today | yesterday
     agentPeriod: 'monthly', // daily | weekly | monthly | yearly
@@ -99,7 +99,7 @@
   // Wipe stale numbers off the page while there's no valid live data loaded.
   function clearStage() {
     ['#kpiRow', '#salesTiles', '#queueBars', '#teamBars', '#heatmap', '#dataHealth'].forEach(sel => { const el2 = $(sel); if (el2) el2.innerHTML = ''; });
-    ['agents', 'sales'].forEach(id => { const w = $(`#tbl_${id}`); if (w) w.innerHTML = ''; const c = $(`#count_${id}`); if (c) c.textContent = ''; const p = $(`#pager_${id}`); if (p) p.innerHTML = ''; });
+    ['agents', 'sales', 'agentsPerf'].forEach(id => { const w = $(`#tbl_${id}`); if (w) w.innerHTML = ''; const c = $(`#count_${id}`); if (c) c.textContent = ''; const p = $(`#pager_${id}`); if (p) p.innerHTML = ''; });
   }
 
   function showNotConnected() {
@@ -431,18 +431,18 @@
     return `<span class="rankmedal">${i + 1}</span>`;
   }
 
-  function renderAgentTable(calls, sales) {
+  function renderAgentTable(calls, sales, id = 'agents') {
     let rows = computeAgentRows(calls, sales);
     // "Calls Handled" / Share of Volume are based on ANSWERED calls only —
     // abandoned calls don't count as "handled".
     const totalHandled = rows.reduce((a, r) => a + r.answered, 0) || 1;
     rows.forEach(r => r.share = r.answered / totalHandled * 100);
-    const search = state.tableSearch.agents.toLowerCase();
+    const search = state.tableSearch[id].toLowerCase();
     if (search) rows = rows.filter(r => r.agent.toLowerCase().includes(search));
-    const { key, dir } = state.tableSort.agents;
+    const { key, dir } = state.tableSort[id];
     rows.sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * (dir === 'asc' ? 1 : -1));
     const maxShare = Math.max(...rows.map(x => x.share), 1);
-    renderTable('agents', rows, {
+    renderTable(id, rows, {
       pageSize: 10,
       cols: [
         { key: 'rank', label: '#', cls: 'rank', render: (r, i) => rankBadge(i), sortable: false },
@@ -547,13 +547,13 @@
         const k = th.dataset.key;
         if (sort.key === k) sort.dir = sort.dir === 'asc' ? 'desc' : 'asc'; else { sort.key = k; sort.dir = 'desc'; }
         state.tablePage[id] = 1;
-        renderAll();
+        id === 'agentsPerf' ? renderAgentPerf() : renderAll();
       });
     });
     const pager = $(`#pager_${id}`);
     pager.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
       state.tablePage[id] += b.dataset.act === 'next' ? 1 : -1;
-      renderAll();
+      id === 'agentsPerf' ? renderAgentPerf() : renderAll();
     }));
   }
 
@@ -1024,6 +1024,7 @@
 
   function renderAgentPerf() {
     if (!$('#page-agents')) return;
+    renderAgentTable(DataEngine.calls, DataEngine.sales, 'agentsPerf');
     populateAgentSelect();
     const agent = state.agentSelected;
     if (!agent) return;
@@ -1081,6 +1082,8 @@
       const inp = $(`#search_${id}`);
       if (inp) inp.addEventListener('input', debounce(() => { state.tableSearch[id] = inp.value; state.tablePage[id] = 1; renderAll(); }, 200));
     });
+    const agentsPerfSearch = $('#search_agentsPerf');
+    if (agentsPerfSearch) agentsPerfSearch.addEventListener('input', debounce(() => { state.tableSearch.agentsPerf = agentsPerfSearch.value; state.tablePage.agentsPerf = 1; renderAgentPerf(); }, 200));
 
     // top search
     const topSearch = $('#topSearch');
