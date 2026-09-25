@@ -44,14 +44,12 @@
     compare: true,
     theme: localStorage.getItem('sc_theme') || 'light',
     trendMetric: 'volume', // volume | result
-    tablePage: { agents: 1, queues: 1, sales: 1 },
-    tableSort: { agents: { key: 'perf', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' } },
-    tableSearch: { agents: '', queues: '', sales: '' },
+    tablePage: { agents: 1, queues: 1, sales: 1, closers: 1, leads: 1 },
+    tableSort: { agents: { key: 'perf', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' }, closers: { key: 'points', dir: 'desc' }, leads: { key: 'points', dir: 'desc' } },
+    tableSearch: { agents: '', queues: '', sales: '', closers: '', leads: '' },
     hourlyTZ: 'ct', // ct | pkt
     hourlyDay: 'today', // today | yesterday
-    agentPeriod: 'monthly', // daily | weekly | monthly | yearly
-    agentSelected: null,
-    page: 'overview', // overview | hourly
+    page: 'overview', // overview | hourly | closerperf | leadperf
   };
 
   // ---------------- Boot ----------------
@@ -64,20 +62,50 @@
     await bootLoad(feedUrl);
   }
 
-  async function bootLoad(feedUrl) {
-    showBoot(true);
+  async function bootLoad(feedUrl, forceFresh = false) {
     dataLoaded = false;
     if (!feedUrl) {
+      showBoot(true);
       showNotConnected();
       clearStage();
       showBoot(false);
       return;
     }
+
+    // Instant paint: if we already have a last-good copy in localStorage,
+    // show it immediately instead of waiting on the network — this is what
+    // makes "refresh" feel instant instead of sitting on the loading screen.
+    // The live fetch below still runs right after, in the background, and
+    // silently re-renders with fresh numbers the moment it lands. Skipped
+    // when the user explicitly hit Refresh (forceFresh) — then we show an
+    // active "Refreshing…" state instead of quietly reusing old numbers.
+    const cached = DataEngine.loadLastGood();
+    const paintedFromCache = !!cached && !forceFresh;
+    if (paintedFromCache) {
+      showRefreshingBanner(cached.savedAt);
+      dataLoaded = true;
+      setupFilterDefaults();
+      populateFilterOptions();
+      renderAll();
+      showBoot(false);
+    } else if (forceFresh && cached) {
+      showRefreshingBanner(cached.savedAt, true);
+    } else {
+      showBoot(true);
+    }
+
     try {
-      await DataEngine.load(feedUrl);
+      await DataEngine.load(feedUrl, forceFresh);
       showSourceBanner('live', feedUrl);
     } catch (err) {
       console.error(err);
+      if (cached) {
+        // Dashboard is already showing (or can fall back to) the cached
+        // numbers — don't blank it, just flag that this refresh didn't land.
+        if (!paintedFromCache) { dataLoaded = true; setupFilterDefaults(); populateFilterOptions(); renderAll(); showBoot(false); }
+        showStaleBanner(err.message, feedUrl, cached.savedAt);
+        return;
+      }
       showFatal(err.message, feedUrl);
       clearStage();
       showBoot(false);
@@ -119,14 +147,34 @@
         <div><b>Couldn't load live data.</b> ${escapeHtml(msg)}. Check the Apps Script deployment (access must be "Anyone with the link") and your sheet's tab/column names, then retry.</div>
         <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button>
       </div>`;
-    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url));
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url, true));
+  }
+
+  function showRefreshingBanner(savedAt, active) {
+    $('#dataBanner').innerHTML = `
+      <div class="banner">
+        ${icon('refresh')}
+        <div>${active
+          ? `<b>Refreshing…</b> pulling the latest numbers straight from the sheet (bypassing any cache).`
+          : `<b>Showing your last data</b> (${savedAt ? timeAgo(new Date(savedAt).toISOString()) : 'cached'}) while the live sheet loads in the background…`}</div>
+      </div>`;
+  }
+
+  function showStaleBanner(msg, url, savedAt) {
+    $('#dataBanner').innerHTML = `
+      <div class="banner banner--err">
+        ${icon('alert')}
+        <div><b>Live refresh failed</b> (${escapeHtml(msg)}) — showing the last data pulled ${savedAt ? timeAgo(new Date(savedAt).toISOString()) : 'earlier'}. This usually clears up on its own; hit retry in a moment.</div>
+        <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button>
+      </div>`;
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url, true));
   }
 
   function showSourceBanner(kind, url) {
     const el2 = $('#dataBanner');
     el2.innerHTML = `<div class="banner banner--ok">${icon('check')}<div><b>Connected.</b> Live data from your Google Sheet${DataEngine.generatedAt ? ' · updated ' + timeAgo(DataEngine.generatedAt) : ''}.</div>
       <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Refresh</button></div>`;
-    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad((window.SC_CONFIG && window.SC_CONFIG.feedUrl) || localStorage.getItem(DATA_URL_KEY)));
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad((window.SC_CONFIG && window.SC_CONFIG.feedUrl) || localStorage.getItem(DATA_URL_KEY), true));
   }
   function timeAgo(iso) {
     try {
@@ -181,6 +229,10 @@
     renderResultCluster(calls);
     renderQueueLeaderboard(calls);
     renderAgentTable(calls, sales);
+    renderClosersTable(sales);
+    renderLeadsTable(sales);
+    renderClosersPreview(sales);
+    renderLeadsPreview(sales);
     renderHeatmap(calls);
     renderSalesKpis(sales, pSales);
     renderSalesByProvider(sales);
@@ -470,6 +522,78 @@
     return `<span class="cellbar"><i style="width:${w}px"></i>${v.toFixed(0)}%</span>`;
   }
 
+  // ---------------- Closer / Lead Gen tables ----------------
+  // Closer and Lead Gen are sales-only roles (Closer Name / Lead Generated
+  // by (If Any) columns on the "sales Data" tab, per SALES_MAP in
+  // Code.gs) — they never appear on "Calls Data", so unlike the Agent
+  // table there's no calls/AHT side to join in, just Sales, RGUs and
+  // Points. Same sortable/searchable/paginated table shape as All Agents.
+  function computeSalesRoleRows(sales, field) {
+    const map = new Map();
+    (sales || []).forEach(s => {
+      const name = s[field];
+      if (!name) return;
+      if (!map.has(name)) map.set(name, { name, salesCount: 0, rgu: 0, points: 0 });
+      const r = map.get(name);
+      r.salesCount++; r.rgu += Number(s.rgu) || 0; r.points += Number(s.total) || 0;
+    });
+    return Array.from(map.values()).map(r => ({ ...r, avgPoints: r.salesCount ? r.points / r.salesCount : 0 }));
+  }
+
+  function renderSalesRoleTable(tableId, field, label, sales) {
+    let rows = computeSalesRoleRows(sales, field);
+    const totalSales = rows.reduce((a, r) => a + r.salesCount, 0) || 1;
+    rows.forEach(r => r.share = r.salesCount / totalSales * 100);
+    const search = state.tableSearch[tableId].toLowerCase();
+    if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search));
+    const { key, dir } = state.tableSort[tableId];
+    rows.sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * (dir === 'asc' ? 1 : -1));
+    const maxShare = Math.max(...rows.map(x => x.share), 1);
+    renderTable(tableId, rows, {
+      pageSize: 10,
+      cols: [
+        { key: 'rank', label: '#', cls: 'rank', render: (r, i) => rankBadge(i), sortable: false },
+        { key: 'name', label, cls: 'grow', render: r => `
+            <span class="agentcell">
+              <span class="agentava" style="background:${avaColor(r.name)}">${escapeHtml(initials(r.name))}</span>
+              <span>${escapeHtml(r.name)}</span>
+            </span>` },
+        { key: 'salesCount', label: 'Sales', cls: 'r' },
+        { key: 'rgu', label: 'RGUs', cls: 'r', render: r => int(r.rgu) },
+        { key: 'points', label: 'Total Points', cls: 'r', render: r => int(r.points) },
+        { key: 'avgPoints', label: 'Avg Points/Sale', cls: 'r', render: r => r.avgPoints.toFixed(1) },
+        { key: 'share', label: 'Share of Sales', cls: 'r', render: r => barCell(r.share, maxShare) },
+      ],
+      empty: { title: `No ${label.toLowerCase()} activity`, sub: 'Try widening the date range or clearing filters.' },
+    });
+  }
+
+  function renderClosersTable(sales) { if ($('#page-closers')) renderSalesRoleTable('closers', 'closer', 'Closer', sales); }
+  function renderLeadsTable(sales) { if ($('#page-leads')) renderSalesRoleTable('leads', 'lead', 'Lead Gen', sales); }
+
+  // Compact top-5 previews shown on the Overview page (no search/pager —
+  // just a quick glance, with a "View all" button that jumps to the full
+  // Closer/Lead Gen Performance page).
+  function renderRolePreview(containerId, field, sales) {
+    const el2 = $(`#${containerId}`); if (!el2) return;
+    let rows = computeSalesRoleRows(sales, field);
+    rows.sort((a, b) => b.points - a.points);
+    rows = rows.slice(0, 5);
+    if (!rows.length) { el2.innerHTML = emptyRow(); return; }
+    el2.innerHTML = `<table class="tbl">
+      <tbody>
+        ${rows.map((r, i) => `<tr>
+          <td class="rank">${rankBadge(i)}</td>
+          <td class="grow"><span class="agentcell"><span class="agentava" style="background:${avaColor(r.name)}">${escapeHtml(initials(r.name))}</span><span>${escapeHtml(r.name)}</span></span></td>
+          <td class="r">${int(r.salesCount)} sales</td>
+          <td class="r"><b>${int(r.points)}</b> pts</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+  function renderClosersPreview(sales) { renderRolePreview('tbl_closersOv', 'closer', sales); }
+  function renderLeadsPreview(sales) { renderRolePreview('tbl_leadsOv', 'lead', sales); }
+
   // ---------------- Sales breakdowns ----------------
   function renderSalesByProvider(sales) {
     const counts = groupCount(sales, s => s.provider || 'Unknown');
@@ -494,7 +618,7 @@
   function renderSalesTable(sales) {
     let rows = sales.slice();
     const search = state.tableSearch.sales.toLowerCase();
-    if (search) rows = rows.filter(r => [r.agent, r.closer, r.provider, r.team, r.state, r.campaign].filter(Boolean).join(' ').toLowerCase().includes(search));
+    if (search) rows = rows.filter(r => [r.agent, r.closer, r.lead, r.provider, r.team, r.state, r.campaign].filter(Boolean).join(' ').toLowerCase().includes(search));
     const { key, dir } = state.tableSort.sales;
     rows.sort((a, b) => {
       const av = a[key], bv = b[key];
@@ -506,6 +630,7 @@
         { key: 'd', label: 'Date', render: r => DataEngine.fmtDateShort(DataEngine.dateFromNum(r.d)) },
         { key: 'agent', label: 'Agent', cls: 'grow', render: r => r.agent || '—' },
         { key: 'closer', label: 'Closer', render: r => r.closer || '—' },
+        { key: 'lead', label: 'Lead Gen', render: r => r.lead || '—' },
         { key: 'provider', label: 'Provider', render: r => r.provider || '—' },
         { key: 'services', label: 'Service', render: r => r.services || '—' },
         { key: 'team', label: 'Team', render: r => r.team || '—' },
@@ -876,171 +1001,23 @@
     el2.innerHTML = html;
   }
 
-  // ---------------- Agent Performance page ----------------
-  function populateAgentSelect() {
-    const sel = $('#agentPickSelect'); if (!sel) return;
-    const agents = DataEngine.distinctAgents();
-    if (!agents.length) return;
-    if (!state.agentSelected || !agents.includes(state.agentSelected)) {
-      // Default to the agent with the most answered calls, so the page
-      // opens on someone with real data rather than an empty A-Z pick.
-      const rows = computeAgentRows(DataEngine.calls, DataEngine.sales);
-      const top = rows.sort((a, b) => b.answered - a.answered)[0];
-      state.agentSelected = (top && top.agent) || agents[0];
-    }
-    sel.innerHTML = agents.map(a => `<option value="${escapeHtml(a)}"${a === state.agentSelected ? ' selected' : ''}>${escapeHtml(a)}</option>`).join('');
-  }
-
-  // One row per calendar day for the chosen agent (all history — this page
-  // ignores the filter bar, same as the Hourly page), which app.js then
-  // re-buckets into daily/weekly/monthly/yearly using the same bucketKey/
-  // bucketLabel helpers the main Trend chart uses.
-  function agentDailyRows(agentName) {
-    const map = new Map();
-    function ensure(dt) {
-      const k = DataEngine.fmtDate(dt);
-      if (!map.has(k)) map.set(k, { date: dt, calls: 0, answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0, sales: 0, points: 0, rgu: 0 });
-      return map.get(k);
-    }
-    DataEngine.calls.forEach(c => {
-      if (c.agent !== agentName) return;
-      const b = ensure(c.date); b.calls++;
-      if (c.result === 'Answered') { b.answered++; b.talk += c.talk; b.hold += c.hold; b.wrap += c.wrap; b.talkN++; }
-      else if (c.result === 'Abandoned') b.abandoned++;
-    });
-    DataEngine.sales.forEach(s => {
-      if (s.agent !== agentName) return;
-      const b = ensure(s.date); b.sales++; b.points += Number(s.total) || 0; b.rgu += Number(s.rgu) || 0;
-    });
-    return Array.from(map.values());
-  }
-
-  function agentBuckets(agentName, granularity) {
-    const daily = agentDailyRows(agentName);
-    const buckets = new Map();
-    daily.forEach(d => {
-      const k = bucketKey(d.date, granularity);
-      if (!buckets.has(k)) buckets.set(k, { key: k, calls: 0, answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0, sales: 0, points: 0, rgu: 0 });
-      const b = buckets.get(k);
-      b.calls += d.calls; b.answered += d.answered; b.abandoned += d.abandoned;
-      b.talk += d.talk; b.hold += d.hold; b.wrap += d.wrap; b.talkN += d.talkN;
-      b.sales += d.sales; b.points += d.points; b.rgu += d.rgu;
-    });
-    const keys = Array.from(buckets.keys()).sort();
-    return keys.map(k => {
-      const b = buckets.get(k);
-      const decided = b.answered + b.abandoned;
-      return {
-        ...b, label: bucketLabel(k, granularity),
-        aht: b.talkN ? (b.talk + b.hold + b.wrap) / b.talkN : 0,
-        answerRate: decided ? b.answered / decided * 100 : 0,
-      };
-    });
-  }
-
-  function renderAgentKpis(agentName) {
-    const el2 = $('#agentKpiRow'); if (!el2) return;
-    const all = agentBuckets(agentName, 'yearly'); // coarsest granularity = fastest way to get true totals
-    const t = all.reduce((a, b) => { a.answered += b.answered; a.abandoned += b.abandoned; a.talk += b.talk; a.hold += b.hold; a.wrap += b.wrap; a.talkN += b.talkN; a.sales += b.sales; a.points += b.points; a.rgu += b.rgu; return a; },
-      { answered: 0, abandoned: 0, talk: 0, hold: 0, wrap: 0, talkN: 0, sales: 0, points: 0, rgu: 0 });
-    const decided = t.answered + t.abandoned;
-    const answerRate = decided ? t.answered / decided * 100 : 0;
-    const aht = t.talkN ? (t.talk + t.hold + t.wrap) / t.talkN : 0;
-    const conv = t.answered ? t.sales / t.answered * 100 : 0;
-    const items = [
-      { k: 1, ico: 'phone', label: 'Calls Handled', value: int(t.answered) },
-      { k: 2, ico: 'check', label: 'Answer Rate', value: pct(answerRate) },
-      { k: 3, ico: 'clock', label: 'Avg Handling Time', value: hms(aht) },
-      { k: 5, ico: 'cart', label: 'Sales Closed', value: int(t.sales) + ` <small>${pct(conv, 0)}</small>` },
-      { k: 6, ico: 'layers', label: 'RGUs Sold', value: int(t.rgu) },
-      { k: 8, ico: 'star', label: 'Total Points', value: int(t.points) },
-    ];
-    el2.innerHTML = items.map(it => `
-      <div class="kpi kpi--${it.k}">
-        <div class="kpi__top"><div class="kpi__ico">${icon(it.ico)}</div></div>
-        <div class="kpi__label">${it.label}</div>
-        <div class="kpi__row"><div class="kpi__value">${it.value}</div></div>
-      </div>`).join('');
-  }
-
-  function renderAgentRank(agentName) {
-    const el2 = $('#agentRankRow'); if (!el2) return;
-    const rows = computeAgentRows(DataEngine.calls, DataEngine.sales);
-    const n = rows.length || 1;
-    function rankOf(sortKey) {
-      const sorted = [...rows].sort((a, b) => b[sortKey] - a[sortKey]);
-      const idx = sorted.findIndex(r => r.agent === agentName);
-      return idx < 0 ? null : idx + 1;
-    }
-    const items = [
-      { label: 'Rank by Sales', rank: rankOf('salesCount') },
-      { label: 'Rank by RGUs', rank: rankOf('rgu') },
-      { label: 'Rank by Points', rank: rankOf('points') },
-      { label: 'Rank by Calls Handled', rank: rankOf('answered') },
-    ];
-    el2.innerHTML = items.map((it, i) => `
-      <div class="agentRank" style="animation-delay:${i * 60}ms">
-        <div class="agentRank__badge">${it.rank ? '#' + it.rank : '—'}</div>
-        <div class="agentRank__text">
-          <div class="agentRank__label">${it.label}</div>
-          <div class="agentRank__value">of ${n} agents</div>
-        </div>
-      </div>`).join('');
-  }
-
-  function renderAgentTrend(agentName, granularity) {
-    const rows = agentBuckets(agentName, granularity);
-    const labels = rows.map(r => r.label);
-    const series = [
-      { name: 'Calls handled', values: rows.map(r => r.answered), color: COLORS.green },
-      { name: 'Sales closed', values: rows.map(r => r.sales), color: COLORS.amber },
-    ];
-    Charts.lineChart($('#agentTrendChart'), { labels, series, height: 260 });
-    $('#agentTrendLegend').innerHTML = series.map(s => `<span><i style="background:${s.color}"></i>${s.name}</span>`).join('');
-  }
-
-  function renderAgentPeriodTable(agentName, granularity) {
-    const el2 = $('#tbl_agentPeriods'); if (!el2) return;
-    const rows = agentBuckets(agentName, granularity).slice().reverse(); // most recent first
-    if (!rows.length) { el2.innerHTML = '<div class="empty"><b>No data</b>This agent has no calls or sales on file yet.</div>'; return; }
-    const maxCalls = Math.max(1, ...rows.map(r => r.answered));
-    el2.innerHTML = `<table class="tbl">
-      <thead><tr>
-        <th>${granularity === 'daily' ? 'Date' : granularity === 'weekly' ? 'Week of' : granularity === 'yearly' ? 'Year' : 'Month'}</th>
-        <th class="r">Calls Handled</th><th class="r">Answer Rate</th><th class="r">Sales</th>
-        <th class="r">RGUs</th><th class="r">Points</th><th>Volume</th>
-      </tr></thead>
-      <tbody>${rows.map(r => `<tr>
-        <td><b>${r.label}</b></td>
-        <td class="r">${int(r.answered)}</td>
-        <td class="r">${(r.answered + r.abandoned) ? pct(r.answerRate, 0) : '—'}</td>
-        <td class="r">${int(r.sales)}</td>
-        <td class="r">${int(r.rgu)}</td>
-        <td class="r">${int(r.points)}</td>
-        <td><div class="hourly-bar"><i style="width:${(r.answered / maxCalls * 100).toFixed(1)}%"></i></div></td>
-      </tr>`).join('')}</tbody>
-    </table>`;
-  }
-
-  function renderAgentPerf() {
-    if (!$('#page-agents')) return;
-    populateAgentSelect();
-    const agent = state.agentSelected;
-    if (!agent) return;
-    renderAgentKpis(agent);
-    renderAgentRank(agent);
-    renderAgentTrend(agent, state.agentPeriod);
-    renderAgentPeriodTable(agent, state.agentPeriod);
-  }
-
   // ---------------- Data health ----------------
   function renderDataHealth(calls, sales) {
     const el2 = $('#dataHealth'); if (!el2) return;
     const missingAgent = calls.filter(c => !c.agent).length;
+    // Sales rows whose points came back as 0/blank/unreadable from the feed —
+    // the row itself is present (counts toward Sales Closed) but contributes
+    // nothing to Total Points. If your spreadsheet's Points sum is higher
+    // than the dashboard's, this count is where to start looking: sort the
+    // Sales table by the "Points" column (ascending) to see these rows, then
+    // check their Points cell in the sheet (blank / text / comma-formatted
+    // numbers like "1,234" are the usual culprits).
+    const zeroPointSales = sales.filter(s => !s.total || Number(s.total) === 0).length;
     const items = [
       ['Rows in range (calls)', int(calls.length)],
       ['Rows in range (sales)', int(sales.length)],
       ['Calls without an agent', int(missingAgent) + ' (' + pct(calls.length ? missingAgent / calls.length * 100 : 0, 0) + ')'],
+      ['Sales with 0 points', int(zeroPointSales) + (sales.length ? ' (' + pct(sales.length ? zeroPointSales / sales.length * 100 : 0, 0) + ')' : '')],
       ['Data source', DataEngine.source === 'sample' ? 'Sample export' : 'Live Google Sheet'],
       ['Last refreshed', DataEngine.generatedAt ? new Date(DataEngine.generatedAt).toLocaleString() : '—'],
     ];
@@ -1077,7 +1054,7 @@
     $('#btnExport').addEventListener('click', exportCsv);
 
     // table search
-    ['agents', 'queues', 'sales'].forEach(id => {
+    ['agents', 'queues', 'sales', 'closers', 'leads'].forEach(id => {
       const inp = $(`#search_${id}`);
       if (inp) inp.addEventListener('input', debounce(() => { state.tableSearch[id] = inp.value; state.tablePage[id] = 1; renderAll(); }, 200));
     });
@@ -1120,7 +1097,8 @@
     window.addEventListener('scroll', onScroll);
 
     // Hourly tab
-    $('#rail_hourly').addEventListener('click', () => switchPage('hourly'));
+    const railHourly = $('#rail_hourly');
+    if (railHourly) railHourly.addEventListener('click', () => switchPage('hourly'));
     $$('.seg[data-group="hourlyTz"] button').forEach(btn => {
       btn.addEventListener('click', () => {
         setActiveSeg('hourlyTz', btn);
@@ -1136,37 +1114,42 @@
       });
     });
 
-    // Agent Performance tab
-    $('#rail_agentperf').addEventListener('click', () => switchPage('agentperf'));
-    $('#agentPickSelect').addEventListener('change', e => {
-      state.agentSelected = e.target.value;
-      renderAgentPerf();
-    });
-    $$('.seg[data-group="agentPeriod"] button').forEach(btn => {
-      btn.addEventListener('click', () => {
-        setActiveSeg('agentPeriod', btn);
-        state.agentPeriod = btn.dataset.period;
-        renderAgentPerf();
-      });
-    });
+    // Closer Performance tab
+    const railClosers = $('#rail_closerperf');
+    if (railClosers) railClosers.addEventListener('click', () => switchPage('closerperf'));
+
+    // Lead Gen Performance tab
+    const railLeads = $('#rail_leadperf');
+    if (railLeads) railLeads.addEventListener('click', () => switchPage('leadperf'));
+
+    // Overview page "View all" buttons on the Closer/Lead Gen previews
+    const viewAllClosers = $('#btnViewAllClosers');
+    if (viewAllClosers) viewAllClosers.addEventListener('click', () => switchPage('closerperf'));
+    const viewAllLeads = $('#btnViewAllLeads');
+    if (viewAllLeads) viewAllLeads.addEventListener('click', () => switchPage('leadperf'));
   }
 
   function switchPage(id) {
     state.page = id;
-    $('#top').hidden = id !== 'overview';
-    $('#page-hourly').hidden = id !== 'hourly';
-    $('#page-agents').hidden = id !== 'agentperf';
+    const setHidden = (sel, val) => { const el2 = $(sel); if (el2) el2.hidden = val; };
+    const setCurrent = sel => { const el2 = $(sel); if (el2) el2.setAttribute('aria-current', 'page'); };
+    setHidden('#top', id !== 'overview');
+    setHidden('#page-hourly', id !== 'hourly');
+    setHidden('#page-closers', id !== 'closerperf');
+    setHidden('#page-leads', id !== 'leadperf');
     $$('.rail__btn[data-goto], .rail__btn[data-page]').forEach(b => b.removeAttribute('aria-current'));
     if (id === 'hourly') {
-      $('#rail_hourly').setAttribute('aria-current', 'page');
+      setCurrent('#rail_hourly');
       renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (id === 'agentperf') {
-      $('#rail_agentperf').setAttribute('aria-current', 'page');
-      renderAgentPerf();
+    } else if (id === 'closerperf') {
+      setCurrent('#rail_closerperf');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (id === 'leadperf') {
+      setCurrent('#rail_leadperf');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      $('.rail__btn[data-goto="top"]').setAttribute('aria-current', 'page');
+      setCurrent('.rail__btn[data-goto="top"]');
     }
   }
 
@@ -1185,7 +1168,7 @@
     if (!url) return;
     localStorage.setItem(DATA_URL_KEY, url);
     $('#connectPop').hidden = true;
-    bootLoad(url);
+    bootLoad(url, true);
   }
 
   function setActiveSeg(group, activeBtn) {
