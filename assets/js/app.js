@@ -44,12 +44,13 @@
     compare: true,
     theme: localStorage.getItem('sc_theme') || 'light',
     trendMetric: 'volume', // volume | result
-    tablePage: { agents: 1, queues: 1, sales: 1, agentsPerf: 1 },
-    tableSort: { agents: { key: 'perf', dir: 'desc' }, queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' }, agentsPerf: { key: 'perf', dir: 'desc' } },
-    tableSearch: { agents: '', queues: '', sales: '', agentsPerf: '' },
+    tablePage: { queues: 1, sales: 1, agentsPerf: 1 },
+    tableSort: { queues: { key: 'calls', dir: 'desc' }, sales: { key: 'd', dir: 'desc' }, agentsPerf: { key: 'perf', dir: 'desc' } },
+    tableSearch: { queues: '', sales: '', agentsPerf: '' },
     hourlyTZ: 'ct', // ct | pkt
     hourlyDay: 'today', // today | yesterday
     agentPeriod: 'monthly', // daily | weekly | monthly | yearly
+    agentsPerfRange: 'all', // daily | weekly | monthly | all — range for the All Agents leaderboard on the Agent Performance tab
     agentSelected: null,
     page: 'overview', // overview | hourly
   };
@@ -99,7 +100,7 @@
   // Wipe stale numbers off the page while there's no valid live data loaded.
   function clearStage() {
     ['#kpiRow', '#salesTiles', '#queueBars', '#teamBars', '#heatmap', '#dataHealth'].forEach(sel => { const el2 = $(sel); if (el2) el2.innerHTML = ''; });
-    ['agents', 'sales', 'agentsPerf'].forEach(id => { const w = $(`#tbl_${id}`); if (w) w.innerHTML = ''; const c = $(`#count_${id}`); if (c) c.textContent = ''; const p = $(`#pager_${id}`); if (p) p.innerHTML = ''; });
+    ['sales', 'agentsPerf'].forEach(id => { const w = $(`#tbl_${id}`); if (w) w.innerHTML = ''; const c = $(`#count_${id}`); if (c) c.textContent = ''; const p = $(`#pager_${id}`); if (p) p.innerHTML = ''; });
   }
 
   function showNotConnected() {
@@ -180,7 +181,6 @@
     renderTrend(calls);
     renderResultCluster(calls);
     renderQueueLeaderboard(calls);
-    renderAgentTable(calls, sales);
     renderHeatmap(calls);
     renderSalesKpis(sales, pSales);
     renderSalesByProvider(sales);
@@ -1022,9 +1022,34 @@
     </table>`;
   }
 
+  // Daily/Weekly/Monthly/All range for the "All Agents" leaderboard on the
+  // Agent Performance tab — independent of the top filter bar (that bar is
+  // ignored on this page) and independent of the per-agent period picker below.
+  function agentsPerfRangeWindow(preset) {
+    const { min, max } = DataEngine.bounds;
+    if (!max) return { start: min, end: max };
+    let start;
+    if (preset === 'daily') {
+      start = max;
+    } else if (preset === 'weekly') {
+      const dow = max.getUTCDay();
+      const diffToMonday = (dow + 6) % 7;
+      start = new Date(max.getTime() - diffToMonday * DataEngine.DAY);
+    } else if (preset === 'monthly') {
+      start = new Date(Date.UTC(max.getUTCFullYear(), max.getUTCMonth(), 1));
+    } else {
+      start = min;
+    }
+    return { start: start < min ? min : start, end: max };
+  }
+
   function renderAgentPerf() {
     if (!$('#page-agents')) return;
-    renderAgentTable(DataEngine.calls, DataEngine.sales, 'agentsPerf');
+    const { start, end } = agentsPerfRangeWindow(state.agentsPerfRange);
+    const f = { start, end, queues: null, agents: null, results: null, teams: null, providers: null, services: null };
+    const calls = state.agentsPerfRange === 'all' ? DataEngine.calls : DataEngine.filterCalls(f);
+    const sales = state.agentsPerfRange === 'all' ? DataEngine.sales : DataEngine.filterSales(f);
+    renderAgentTable(calls, sales, 'agentsPerf');
     populateAgentSelect();
     const agent = state.agentSelected;
     if (!agent) return;
@@ -1078,7 +1103,7 @@
     $('#btnExport').addEventListener('click', exportCsv);
 
     // table search
-    ['agents', 'queues', 'sales'].forEach(id => {
+    ['queues', 'sales'].forEach(id => {
       const inp = $(`#search_${id}`);
       if (inp) inp.addEventListener('input', debounce(() => { state.tableSearch[id] = inp.value; state.tablePage[id] = 1; renderAll(); }, 200));
     });
@@ -1149,6 +1174,14 @@
       btn.addEventListener('click', () => {
         setActiveSeg('agentPeriod', btn);
         state.agentPeriod = btn.dataset.period;
+        renderAgentPerf();
+      });
+    });
+    $$('.seg[data-group="agentsPerfRange"] button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setActiveSeg('agentsPerfRange', btn);
+        state.agentsPerfRange = btn.dataset.arange;
+        state.tablePage.agentsPerf = 1;
         renderAgentPerf();
       });
     });
