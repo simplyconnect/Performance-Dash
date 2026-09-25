@@ -36,12 +36,51 @@ const DataEngine = (() => {
   function dow(dt) { return dt.getUTCDay(); } // 0 Sun..6 Sat
   const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  // Apps Script Web App URLs (script.google.com/.../exec) are served through
+  // a shared script.googleusercontent.com "echo" layer that can — especially
+  // right after a fresh deploy, or under concurrent/rapid requests — return
+  // a transient 404, or occasionally hand back a stale cached response
+  // instead of the latest sheet data. Two things fix both symptoms:
+  //   1. A unique cache-busting query param on every request, so neither the
+  //      browser nor any edge layer can serve back an old response.
+  //   2. A few retries with backoff before we give up — a 404 here is very
+  //      often gone if you just ask again a second later.
+  const LAST_GOOD_KEY = 'sc_last_good_feed';
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function fetchJson(url, attempts = 3) {
+    let lastErr;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const bust = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now();
+        const res = await fetch(bust, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        if (json.ok === false) throw new Error(json.error || 'Feed returned an error');
+        return json;
+      } catch (err) {
+        lastErr = err;
+        if (i < attempts - 1) await sleep(600 * (i + 1)); // 600ms, then 1200ms
+      }
+    }
+    throw lastErr;
+  }
+
   async function load(url) {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
-    if (json.ok === false) throw new Error(json.error || 'Feed returned an error');
+    const json = await fetchJson(url);
+    try { localStorage.setItem(LAST_GOOD_KEY, JSON.stringify({ json, savedAt: Date.now() })); } catch (e) { /* storage full/unavailable — ignore */ }
     return ingest(json);
+  }
+
+  // Fallback used by app.js when a live fetch fails after retries — lets the
+  // dashboard keep showing the last successful pull instead of going blank.
+  function loadLastGood() {
+    try {
+      const cached = JSON.parse(localStorage.getItem(LAST_GOOD_KEY) || 'null');
+      if (!cached) return null;
+      const info = ingest(cached.json);
+      return Object.assign({}, info, { stale: true, savedAt: cached.savedAt });
+    } catch (e) { return null; }
   }
 
   function ingest(json) {
@@ -283,7 +322,7 @@ const DataEngine = (() => {
   }
 
   return {
-    load, ingest, dateFromNum, fmtDate, fmtDateShort, fmtDateFull, dow, DOW_LABELS, DAY,
+    load, loadLastGood, ingest, dateFromNum, fmtDate, fmtDateShort, fmtDateFull, dow, DOW_LABELS, DAY,
     get calls() { return calls; }, get sales() { return sales; }, get bounds() { return bounds; },
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
