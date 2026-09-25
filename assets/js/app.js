@@ -78,6 +78,19 @@
       showSourceBanner('live', feedUrl);
     } catch (err) {
       console.error(err);
+      // Live fetch failed (often a transient Apps Script/echo hiccup, even
+      // after retries in DataEngine.load). Fall back to the last successful
+      // pull instead of leaving the whole dashboard blank.
+      const cached = DataEngine.loadLastGood();
+      if (cached) {
+        showStaleBanner(err.message, feedUrl, cached.savedAt);
+        dataLoaded = true;
+        setupFilterDefaults();
+        populateFilterOptions();
+        renderAll();
+        showBoot(false);
+        return;
+      }
       showFatal(err.message, feedUrl);
       clearStage();
       showBoot(false);
@@ -117,6 +130,16 @@
       <div class="banner banner--err">
         ${icon('alert')}
         <div><b>Couldn't load live data.</b> ${escapeHtml(msg)}. Check the Apps Script deployment (access must be "Anyone with the link") and your sheet's tab/column names, then retry.</div>
+        <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button>
+      </div>`;
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url));
+  }
+
+  function showStaleBanner(msg, url, savedAt) {
+    $('#dataBanner').innerHTML = `
+      <div class="banner banner--err">
+        ${icon('alert')}
+        <div><b>Live refresh failed</b> (${escapeHtml(msg)}) — showing the last data pulled ${savedAt ? timeAgo(new Date(savedAt).toISOString()) : 'earlier'}. This usually clears up on its own; hit retry in a moment.</div>
         <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button>
       </div>`;
     const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url));
