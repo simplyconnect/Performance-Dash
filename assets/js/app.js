@@ -64,7 +64,7 @@
     await bootLoad(feedUrl);
   }
 
-  async function bootLoad(feedUrl) {
+  async function bootLoad(feedUrl, forceFresh = false) {
     dataLoaded = false;
     if (!feedUrl) {
       showBoot(true);
@@ -78,9 +78,11 @@
     // show it immediately instead of waiting on the network — this is what
     // makes "refresh" feel instant instead of sitting on the loading screen.
     // The live fetch below still runs right after, in the background, and
-    // silently re-renders with fresh numbers the moment it lands.
+    // silently re-renders with fresh numbers the moment it lands. Skipped
+    // when the user explicitly hit Refresh (forceFresh) — then we show an
+    // active "Refreshing…" state instead of quietly reusing old numbers.
     const cached = DataEngine.loadLastGood();
-    const paintedFromCache = !!cached;
+    const paintedFromCache = !!cached && !forceFresh;
     if (paintedFromCache) {
       showRefreshingBanner(cached.savedAt);
       dataLoaded = true;
@@ -88,18 +90,21 @@
       populateFilterOptions();
       renderAll();
       showBoot(false);
+    } else if (forceFresh && cached) {
+      showRefreshingBanner(cached.savedAt, true);
     } else {
       showBoot(true);
     }
 
     try {
-      await DataEngine.load(feedUrl);
+      await DataEngine.load(feedUrl, forceFresh);
       showSourceBanner('live', feedUrl);
     } catch (err) {
       console.error(err);
-      if (paintedFromCache) {
-        // Dashboard is already showing the cached numbers — don't blank it,
-        // just flag that this particular refresh didn't get through.
+      if (cached) {
+        // Dashboard is already showing (or can fall back to) the cached
+        // numbers — don't blank it, just flag that this refresh didn't land.
+        if (!paintedFromCache) { dataLoaded = true; setupFilterDefaults(); populateFilterOptions(); renderAll(); showBoot(false); }
         showStaleBanner(err.message, feedUrl, cached.savedAt);
         return;
       }
@@ -144,14 +149,16 @@
         <div><b>Couldn't load live data.</b> ${escapeHtml(msg)}. Check the Apps Script deployment (access must be "Anyone with the link") and your sheet's tab/column names, then retry.</div>
         <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button>
       </div>`;
-    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url));
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url, true));
   }
 
-  function showRefreshingBanner(savedAt) {
+  function showRefreshingBanner(savedAt, active) {
     $('#dataBanner').innerHTML = `
       <div class="banner">
         ${icon('refresh')}
-        <div><b>Showing your last data</b> (${savedAt ? timeAgo(new Date(savedAt).toISOString()) : 'cached'}) while the live sheet loads in the background…</div>
+        <div>${active
+          ? `<b>Refreshing…</b> pulling the latest numbers straight from the sheet (bypassing any cache).`
+          : `<b>Showing your last data</b> (${savedAt ? timeAgo(new Date(savedAt).toISOString()) : 'cached'}) while the live sheet loads in the background…`}</div>
       </div>`;
   }
 
@@ -162,14 +169,14 @@
         <div><b>Live refresh failed</b> (${escapeHtml(msg)}) — showing the last data pulled ${savedAt ? timeAgo(new Date(savedAt).toISOString()) : 'earlier'}. This usually clears up on its own; hit retry in a moment.</div>
         <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button>
       </div>`;
-    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url));
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url, true));
   }
 
   function showSourceBanner(kind, url) {
     const el2 = $('#dataBanner');
     el2.innerHTML = `<div class="banner banner--ok">${icon('check')}<div><b>Connected.</b> Live data from your Google Sheet${DataEngine.generatedAt ? ' · updated ' + timeAgo(DataEngine.generatedAt) : ''}.</div>
       <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Refresh</button></div>`;
-    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad((window.SC_CONFIG && window.SC_CONFIG.feedUrl) || localStorage.getItem(DATA_URL_KEY)));
+    const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad((window.SC_CONFIG && window.SC_CONFIG.feedUrl) || localStorage.getItem(DATA_URL_KEY), true));
   }
   function timeAgo(iso) {
     try {
@@ -1237,7 +1244,7 @@
     if (!url) return;
     localStorage.setItem(DATA_URL_KEY, url);
     $('#connectPop').hidden = true;
-    bootLoad(url);
+    bootLoad(url, true);
   }
 
   function setActiveSeg(group, activeBtn) {
