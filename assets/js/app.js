@@ -65,30 +65,42 @@
   }
 
   async function bootLoad(feedUrl) {
-    showBoot(true);
     dataLoaded = false;
     if (!feedUrl) {
+      showBoot(true);
       showNotConnected();
       clearStage();
       showBoot(false);
       return;
     }
+
+    // Instant paint: if we already have a last-good copy in localStorage,
+    // show it immediately instead of waiting on the network — this is what
+    // makes "refresh" feel instant instead of sitting on the loading screen.
+    // The live fetch below still runs right after, in the background, and
+    // silently re-renders with fresh numbers the moment it lands.
+    const cached = DataEngine.loadLastGood();
+    const paintedFromCache = !!cached;
+    if (paintedFromCache) {
+      showRefreshingBanner(cached.savedAt);
+      dataLoaded = true;
+      setupFilterDefaults();
+      populateFilterOptions();
+      renderAll();
+      showBoot(false);
+    } else {
+      showBoot(true);
+    }
+
     try {
       await DataEngine.load(feedUrl);
       showSourceBanner('live', feedUrl);
     } catch (err) {
       console.error(err);
-      // Live fetch failed (often a transient Apps Script/echo hiccup, even
-      // after retries in DataEngine.load). Fall back to the last successful
-      // pull instead of leaving the whole dashboard blank.
-      const cached = DataEngine.loadLastGood();
-      if (cached) {
+      if (paintedFromCache) {
+        // Dashboard is already showing the cached numbers — don't blank it,
+        // just flag that this particular refresh didn't get through.
         showStaleBanner(err.message, feedUrl, cached.savedAt);
-        dataLoaded = true;
-        setupFilterDefaults();
-        populateFilterOptions();
-        renderAll();
-        showBoot(false);
         return;
       }
       showFatal(err.message, feedUrl);
@@ -133,6 +145,14 @@
         <button class="btn btn--ghost" id="btnRefresh">${icon('refresh')} Retry</button>
       </div>`;
     const rb = $('#btnRefresh'); if (rb) rb.addEventListener('click', () => bootLoad(url));
+  }
+
+  function showRefreshingBanner(savedAt) {
+    $('#dataBanner').innerHTML = `
+      <div class="banner">
+        ${icon('refresh')}
+        <div><b>Showing your last data</b> (${savedAt ? timeAgo(new Date(savedAt).toISOString()) : 'cached'}) while the live sheet loads in the background…</div>
+      </div>`;
   }
 
   function showStaleBanner(msg, url, savedAt) {
@@ -1060,10 +1080,19 @@
   function renderDataHealth(calls, sales) {
     const el2 = $('#dataHealth'); if (!el2) return;
     const missingAgent = calls.filter(c => !c.agent).length;
+    // Sales rows whose points came back as 0/blank/unreadable from the feed —
+    // the row itself is present (counts toward Sales Closed) but contributes
+    // nothing to Total Points. If your spreadsheet's Points sum is higher
+    // than the dashboard's, this count is where to start looking: sort the
+    // Sales table by the "Points" column (ascending) to see these rows, then
+    // check their Points cell in the sheet (blank / text / comma-formatted
+    // numbers like "1,234" are the usual culprits).
+    const zeroPointSales = sales.filter(s => !s.total || Number(s.total) === 0).length;
     const items = [
       ['Rows in range (calls)', int(calls.length)],
       ['Rows in range (sales)', int(sales.length)],
       ['Calls without an agent', int(missingAgent) + ' (' + pct(calls.length ? missingAgent / calls.length * 100 : 0, 0) + ')'],
+      ['Sales with 0 points', int(zeroPointSales) + (sales.length ? ' (' + pct(sales.length ? zeroPointSales / sales.length * 100 : 0, 0) + ')' : '')],
       ['Data source', DataEngine.source === 'sample' ? 'Sample export' : 'Live Google Sheet'],
       ['Last refreshed', DataEngine.generatedAt ? new Date(DataEngine.generatedAt).toLocaleString() : '—'],
     ];
