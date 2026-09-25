@@ -32,11 +32,12 @@
       <button class="rail__btn" data-goto="top" aria-current="page" aria-label="Overview"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/></svg><span class="tipl">Overview</span></button>
       <button class="rail__btn" data-goto="sec-calls" aria-label="Calls"><svg viewBox="0 0 24 24" fill="none"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.5.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.9 21 3 13.1 3 3.9c0-.6.4-1 1-1h3.4c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.5.1.4 0 .8-.2 1L6.6 10.8z" fill="currentColor"/></svg><span class="tipl">Calls</span></button>
       <button class="rail__btn" data-goto="sec-sales" aria-label="Sales"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M12 20V4M20 20v-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span class="tipl">Sales</span></button>
-      <button class="rail__btn" id="rail_agentperf" data-page="agentperf" aria-label="Agent Performance"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c1-3.6 3.6-5.5 6.5-5.5s5.5 1.9 6.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16 4.5c1.7.4 3 2 3 3.9 0 1.9-1.3 3.4-3 3.9M20 20c-.6-2.4-1.8-4.1-3.4-5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="tipl">Agent Performance</span></button>
+      <button class="rail__btn" data-goto="sec-agents" aria-label="Agents"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c1-3.6 3.6-5.5 6.5-5.5s5.5 1.9 6.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16 4.5c1.7.4 3 2 3 3.9 0 1.9-1.3 3.4-3 3.9M20 20c-.6-2.4-1.8-4.1-3.4-5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="tipl">Agents</span></button>
       <button class="rail__btn" data-goto="sec-health" aria-label="Reports"><svg viewBox="0 0 24 24" fill="none"><path d="M7 3h7l5 5v13H7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="tipl">Reports</span></button>
       <button class="rail__btn" data-goto="sec-heatmap" aria-label="Schedule"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="tipl">Schedule</span></button>
       <button class="rail__btn" data-goto="sec-queues" aria-label="Campaigns"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12.5 12.5 3H20v7.5L10.5 20 3 12.5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="16" cy="7" r="1.3" fill="currentColor"/></svg><span class="tipl">Campaigns</span></button>
       <button class="rail__btn" id="rail_hourly" data-page="hourly" aria-label="Hourly"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tipl">Hourly</span></button>
+      <button class="rail__btn" id="rail_agentperf" data-page="agentperf" aria-label="Agent Performance"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17l6-6 4 4 8-8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h6v6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tipl">Agent Performance</span></button>
     </div>
     <button class="rail__btn rail__theme" id="themeToggle" aria-label="Toggle dark mode">
       <svg viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" fill="currentColor"/></svg>
@@ -199,6 +200,21 @@
         </div>
       </div>
 
+      <!-- Agent table -->
+      <div class="grid">
+        <div class="card c12" id="sec-agents">
+          <div class="card__head">
+            <div><div class="card__title">All Agents</div><div class="card__sub">Calls + sales performance per agent — handling time only counts answered calls; Sales % = sales ÷ calls handled; points/RGUs come from the sales sheet</div></div>
+          </div>
+          <div class="tbl-tools">
+            <input class="tbl-search" id="search_agents" placeholder="Search agent…" />
+            <span class="tbl-count" id="count_agents"></span>
+          </div>
+          <div class="tbl-wrap" id="tbl_agents"></div>
+          <div class="pager" id="pager_agents"></div>
+        </div>
+      </div>
+
       <!-- Sales section -->
       <section aria-label="Sales performance" id="sec-sales" class="salesSection">
         <h2 class="salesSection__title">Sales Performance</h2>
@@ -323,27 +339,6 @@
             <button data-period="yearly" aria-pressed="false">Yearly</button>
           </div>
         </div>
-      </div>
-
-      <!-- All Agents leaderboard — landing view of this tab, with its own Daily/Weekly/Monthly/All range -->
-      <div class="card c12" id="sec-agentsPerf">
-        <div class="card__head">
-          <div><div class="card__title">All Agents</div><div class="card__sub">Calls + sales performance per agent — handling time only counts answered calls; Sales % = sales ÷ calls handled; points/RGUs come from the sales sheet</div></div>
-          <div class="card__tools">
-            <div class="seg seg--sm" data-group="agentsPerfRange">
-              <button data-arange="daily" aria-pressed="false">Daily</button>
-              <button data-arange="weekly" aria-pressed="false">Weekly</button>
-              <button data-arange="monthly" aria-pressed="false">Monthly</button>
-              <button data-arange="all" aria-pressed="true">All</button>
-            </div>
-          </div>
-        </div>
-        <div class="tbl-tools">
-          <input class="tbl-search" id="search_agentsPerf" placeholder="Search agent…" />
-          <span class="tbl-count" id="count_agentsPerf"></span>
-        </div>
-        <div class="tbl-wrap" id="tbl_agentsPerf"></div>
-        <div class="pager" id="pager_agentsPerf"></div>
       </div>
 
       <div class="agentRankRow" id="agentRankRow"></div>
