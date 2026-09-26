@@ -464,8 +464,6 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 
 /* ---------- Hourly page ---------- */
 .page[hidden]{display:none}
-#page-hourly{display:flex; flex-direction:column; gap:16px}
-#page-hourly[hidden]{display:none}
 .hourlyHead{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:12px}
 .hourlyHead__title{font-size:20px; font-weight:800; margin:0 0 4px}
 .hourlyHead__sub{margin:0; color:var(--muted); font-size:13px}
