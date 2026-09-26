@@ -936,7 +936,7 @@
   }
 
   function renderHourly(calls, sales) {
-    if (!$('#page-hourly')) return;
+    if (!$('#sec-hourly')) return;
     // Top 3 widgets (Answer Rate heatmap, Sales heatmap, Hourly Detail
     // Table) are pinned to TODAY or YESTERDAY (via the Today/Yesterday
     // toggle) and ignore the filter bar entirely — calls use the Daily
@@ -1096,9 +1096,8 @@
     }, 60);
     window.addEventListener('scroll', onScroll);
 
-    // Hourly tab
-    const railHourly = $('#rail_hourly');
-    if (railHourly) railHourly.addEventListener('click', () => switchPage('hourly'));
+    // Hourly section (now lives inline on the Overview page — its
+    // click nav is handled generically above via data-goto="sec-hourly").
     $$('.seg[data-group="hourlyTz"] button').forEach(btn => {
       btn.addEventListener('click', () => {
         setActiveSeg('hourlyTz', btn);
@@ -1134,15 +1133,10 @@
     const setHidden = (sel, val) => { const el2 = $(sel); if (el2) el2.hidden = val; };
     const setCurrent = sel => { const el2 = $(sel); if (el2) el2.setAttribute('aria-current', 'page'); };
     setHidden('#top', id !== 'overview');
-    setHidden('#page-hourly', id !== 'hourly');
     setHidden('#page-closers', id !== 'closerperf');
     setHidden('#page-leads', id !== 'leadperf');
     $$('.rail__btn[data-goto], .rail__btn[data-page]').forEach(b => b.removeAttribute('aria-current'));
-    if (id === 'hourly') {
-      setCurrent('#rail_hourly');
-      renderHourly(DataEngine.filterCalls(currentFilter()), DataEngine.filterSales(currentFilter()));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (id === 'closerperf') {
+    if (id === 'closerperf') {
       setCurrent('#rail_closerperf');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (id === 'leadperf') {
