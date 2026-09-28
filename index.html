@@ -117,6 +117,10 @@
         <div class="dd" id="dd_services"></div>
 
         <div class="filters__grow"></div>
+        <button class="btn btn--amber" id="btnWeekly" type="button" title="Compare previous week vs current week">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Weekly Compare
+        </button>
         <button class="btn btn--ghost" id="btnReset">Reset</button>
         <button class="btn" id="btnExport">
           <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12M7 10l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -308,6 +312,8 @@
           </div>
         </div>
 
+        <div class="card c12 execCard" id="execSummary"></div>
+
         <div class="tyCompare" id="tyCompare"></div>
 
         <div class="card c12">
@@ -377,6 +383,36 @@
         <div class="pager" id="pager_leads"></div>
       </div>
     </section>
+  </div>
+</div>
+
+<!-- ================= Weekly Compare (Previous vs Current week) ================= -->
+<div class="wc" id="wcOverlay" hidden>
+  <div class="wc__panel" role="dialog" aria-modal="true" aria-labelledby="wcTitle">
+    <div class="wc__head">
+      <div>
+        <h2 id="wcTitle">Weekly Comparison</h2>
+        <p class="wc__sub">Previous week vs current week — kya improve hua, kya girra.</p>
+      </div>
+      <div class="wc__headtools">
+        <button class="btn" id="wcExport" type="button">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12M7 10l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Export CSV
+        </button>
+        <button class="iconbtn" id="wcClose" type="button" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="wc__controls">
+      <span class="filters__label">Current week</span>
+      <button class="btn" id="wcOlder" type="button" aria-label="Older week">‹</button>
+      <select id="wcWeek" class="wc__select" aria-label="Select week"></select>
+      <button class="btn" id="wcNewer" type="button" aria-label="Newer week">›</button>
+      <label class="switch"><input type="checkbox" id="wcLike" checked /> <span>Same days only (fair compare)</span></label>
+      <label class="switch"><input type="checkbox" id="wcFilters" checked /> <span>Use dashboard filters</span></label>
+    </div>
+    <div class="wc__body" id="wcBody"></div>
   </div>
 </div>
 
