@@ -245,6 +245,7 @@
     renderDailyReport(DataEngine.dailyReport(calls, sales));
     renderHourly(calls, sales);
     updateFilterChipStates();
+    if (WC.open) renderWeeklyCompare();
   }
 
   // ---------------- KPIs ----------------
@@ -901,6 +902,159 @@
     el2.innerHTML = html;
   }
 
+  // ---------------- Executive Summary: revenue impact + forecast + insights ----------------
+  const TARGET_KEY = 'sc_daily_sales_target';
+  function getTarget(fallback) {
+    const v = Number(localStorage.getItem(TARGET_KEY));
+    return v > 0 ? v : fallback;
+  }
+  function setTarget(v) { try { localStorage.setItem(TARGET_KEY, String(v)); } catch (e) {} }
+
+  function historyDays(limit) {
+    const todayStr = DataEngine.todayDateStr();
+    const rows = DataEngine.dailyHourlyMatrix(DataEngine.calls, DataEngine.sales)
+      .filter(d => d.dateStr < todayStr && d.totals.calls + d.totals.sales > 0);
+    return rows.slice(-limit);
+  }
+
+  // Average fraction of the day's eventual total reached by the END of each
+  // hour, averaged evenly across historical days (so a slow vs busy day
+  // both contribute one "shape" vote, not skewed by raw volume).
+  function paceCurve(hist, key) {
+    const curve = new Array(24).fill(0);
+    let n = 0;
+    hist.forEach(d => {
+      const total = d.totals[key];
+      if (!total) return;
+      n++;
+      let cum = 0;
+      for (let h = 0; h < 24; h++) { cum += d.buckets[h][key]; curve[h] += cum / total; }
+    });
+    return n ? curve.map(v => v / n) : curve;
+  }
+  function projectForecast(todayBuckets, hist, key) {
+    const curve = paceCurve(hist, key);
+    const h = currentCtHour();
+    const soFar = todayBuckets.slice(0, h + 1).reduce((a, b) => a + b[key], 0);
+    const frac = h > 0 ? curve[h - 1] : 0;
+    if (frac < 0.04) return { value: null, soFar, started: false };
+    return { value: soFar / frac, soFar, started: true };
+  }
+
+  function renderExecSummary() {
+    const el2 = $('#execSummary'); if (!el2) return;
+    const todayStr = DataEngine.todayDateStr();
+    const today = DataEngine.todayHourlyStats(todayStr).buckets;
+    const hist = historyDays(14);
+
+    const histTotals = hist.reduce((a, d) => { a.sales += d.totals.sales; a.answered += d.totals.answered; a.missed += d.totals.missed; a.rgu += d.totals.rgu; return a; }, { sales: 0, answered: 0, missed: 0, rgu: 0 });
+    const avgConv = histTotals.answered ? histTotals.sales / histTotals.answered : 0;      // sales per answered call
+    const avgRguPerSale = histTotals.sales ? histTotals.rgu / histTotals.sales : 0;
+    const avgDailySales = hist.length ? histTotals.sales / hist.length : null;
+    const histAnswerRate = (histTotals.answered + histTotals.missed) ? histTotals.answered / (histTotals.answered + histTotals.missed) * 100 : null;
+
+    const todayTotals = today.reduce((a, b) => { a.sales += b.sales; a.answered += b.answered; a.missed += b.missed; a.rgu += b.rgu; return a; }, { sales: 0, answered: 0, missed: 0, rgu: 0 });
+    const todayAnswerRate = (todayTotals.answered + todayTotals.missed) ? todayTotals.answered / (todayTotals.answered + todayTotals.missed) * 100 : null;
+
+    // Missed-call cost so far today, plus a projected end-of-day cost.
+    const lostSalesSoFar = todayTotals.missed * avgConv;
+    const lostRguSoFar = lostSalesSoFar * avgRguPerSale;
+    const missedFc = projectForecast(today, hist, 'missed');
+    const projMissed = missedFc.value != null ? Math.max(missedFc.soFar, missedFc.value) : null;
+    const projLostSales = projMissed != null ? projMissed * avgConv : null;
+
+    // Sales forecast + target.
+    const salesFc = projectForecast(today, hist, 'sales');
+    const target = getTarget(avgDailySales != null ? Math.round(avgDailySales) : null);
+    const forecastSales = salesFc.value != null ? salesFc.value : (avgDailySales != null ? avgDailySales : null);
+    const progressPct = target ? Math.min(160, todayTotals.sales / target * 100) : null;
+    const forecastPct = target && forecastSales != null ? Math.min(160, forecastSales / target * 100) : null;
+
+    // ---- insight lines (data-driven, no hardcoding) ----
+    const insights = [];
+    if (todayTotals.missed > 0) {
+      insights.push(`<b>${int(todayTotals.missed)} missed call${todayTotals.missed === 1 ? '' : 's'}</b> so far today ≈ <b>${int(Math.round(lostSalesSoFar))} sale${Math.round(lostSalesSoFar) === 1 ? '' : 's'}</b> and <b>${int(Math.round(lostRguSoFar))} RGU${Math.round(lostRguSoFar) === 1 ? '' : 's'}</b> left on the table, based on your ${hist.length}-day average conversion.`);
+    } else if (hist.length) {
+      insights.push(`No missed calls today — full conversion window preserved so far.`);
+    }
+    if (target) {
+      const diff = Math.round((forecastSales != null ? forecastSales : 0) - target);
+      if (!salesFc.started) {
+        insights.push(`Day just getting started — projection will sharpen once the first shift hours are in.`);
+      } else if (diff >= 0) {
+        insights.push(`On current pace, today lands around <b>${int(Math.round(forecastSales))} sales</b> — <b>${int(diff)} above</b> the ${int(target)} target.`);
+      } else {
+        insights.push(`On current pace, today lands around <b>${int(Math.round(forecastSales))} sales</b> — <b>${int(-diff)} short</b> of the ${int(target)} target.`);
+      }
+    }
+    if (histAnswerRate != null && todayTotals.answered + todayTotals.missed >= 5) {
+      const d = todayAnswerRate - histAnswerRate;
+      if (Math.abs(d) >= 1.5) {
+        insights.push(`Answer rate today is <b>${pct(todayAnswerRate, 0)}</b>, ${Math.abs(d).toFixed(0)} pts ${d >= 0 ? 'above' : 'below'} your ${hist.length}-day average of ${pct(histAnswerRate, 0)}.`);
+      }
+    }
+    const decided = today.map(b => b.answered + b.missed);
+    const worstI = argMax(today.map((b, i) => decided[i] >= 3 ? b.missedPct : -1));
+    if (worstI >= 0 && today[worstI].missedPct > 0) {
+      insights.push(`Missed rate peaks around <b>${ctLabel(worstI)}</b> (${pct(today[worstI].missedPct, 0)}) — that window is worth extra coverage.`);
+    }
+
+    const ringPct = progressPct != null ? Math.min(100, progressPct) : 0;
+    const ringColor = target ? (todayTotals.sales >= target ? 'var(--green)' : (forecastPct != null && forecastPct >= 100 ? 'var(--amber-strong)' : 'var(--rose)')) : 'var(--muted)';
+    const circumf = 2 * Math.PI * 42;
+
+    el2.innerHTML = `
+      <div class="exec__head">
+        <div>
+          <div class="card__title">Executive Summary</div>
+          <div class="card__sub">Live read on today (${today.length ? DataEngine.fmtDateShort(new Date(todayStr)) : todayStr}) · auto-generated from the last ${hist.length || '—'} days</div>
+        </div>
+      </div>
+      <div class="exec-grid">
+        <div class="exec-tile exec-tile--impact">
+          <div class="exec-tile__label">Missed-call revenue impact</div>
+          <div class="exec-tile__big">${int(todayTotals.missed)} <small>missed</small></div>
+          <div class="exec-tile__sub">≈ <b>${int(Math.round(lostSalesSoFar))}</b> sales · <b>${int(Math.round(lostRguSoFar))}</b> RGUs lost so far${projLostSales != null && projMissed > todayTotals.missed ? `<br/>Projected full day: ≈ ${int(Math.round(projMissed))} missed → ${int(Math.round(projLostSales))} sales` : ''}</div>
+        </div>
+        <div class="exec-tile exec-tile--forecast">
+          <div class="exec-tile__label">End-of-day forecast</div>
+          <div class="exec-tile__big">${forecastSales != null ? '~' + int(Math.round(forecastSales)) : '—'} <small>sales</small></div>
+          <div class="exec-tile__sub">${salesFc.started ? `So far: ${int(todayTotals.sales)} · pace-projected from ${hist.length}-day pattern` : `So far: ${int(todayTotals.sales)} · projection warms up once the shift is underway`}</div>
+        </div>
+        <div class="exec-tile exec-tile--target">
+          <div class="exec-tile__label">Pace vs target</div>
+          <div class="exec-ring">
+            <svg viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="42" class="exec-ring__bg"/>
+              <circle cx="50" cy="50" r="42" class="exec-ring__fg" style="stroke:${ringColor}; stroke-dasharray:${circumf}; stroke-dashoffset:${circumf * (1 - ringPct / 100)}"/>
+            </svg>
+            <div class="exec-ring__num">${target ? Math.round(todayTotals.sales / target * 100) + '%' : '—'}</div>
+          </div>
+          <div class="exec-tile__sub exec-target">${int(todayTotals.sales)} of
+            <span class="exec-target__val" id="execTargetVal">${target ? int(target) : 'no target set'}</span>
+            <button type="button" class="exec-target__edit" id="execTargetEdit" title="Edit daily target">✎</button>
+          </div>
+        </div>
+      </div>
+      <div class="exec-insights">
+        ${insights.map(t => `<div class="exec-insights__row"><span class="exec-insights__dot"></span><span>${t}</span></div>`).join('')}
+      </div>
+      <div class="exec-note">Revenue-impact and forecast figures are estimates from your own recent conversion and pacing patterns, not exact numbers.</div>
+    `;
+
+    const editBtn = $('#execTargetEdit', el2);
+    if (editBtn) editBtn.addEventListener('click', () => {
+      const cur = target || '';
+      const input = document.createElement('input');
+      input.type = 'number'; input.min = '0'; input.className = 'exec-target__input'; input.value = cur;
+      const valEl = $('#execTargetVal', el2);
+      valEl.replaceWith(input); input.focus(); input.select();
+      const commit = () => { const v = Number(input.value); if (v > 0) setTarget(v); renderExecSummary(); };
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') renderExecSummary(); });
+      input.addEventListener('blur', commit);
+    });
+  }
+
   // ---------------- Today vs Yesterday: cards + interactive hourly chart + insights ----------------
   const TY_METRICS = {
     sales:    { label: 'Sales',       bad: false },
@@ -1105,6 +1259,7 @@
 
   function renderHourly(calls, sales) {
     if (!$('#sec-hourly')) return;
+    renderExecSummary();
     // Top 3 widgets (Answer Rate heatmap, Sales heatmap, Hourly Detail
     // Table) are pinned to TODAY or YESTERDAY (via the Today/Yesterday
     // toggle) and ignore the filter bar entirely — calls use the Daily
@@ -1193,7 +1348,284 @@
   }
 
   // ---------------- Filter UI wiring ----------------
+  // =====================================================================
+  // Weekly Compare — Previous week vs Current week (Mon–Sun)
+  // Opens from the "Weekly Compare" button in the filter bar.
+  // =====================================================================
+  const WC = { open: false, weekStart: null, likeForLike: true, useFilters: true, dayMetric: 'calls', kind: 'agents', metric: 'sales' };
+
+  const WC_METRICS = [
+    { key: 'total',     label: 'Total Calls',        fmt: int },
+    { key: 'answered',  label: 'Answered Calls',     fmt: int },
+    { key: 'ansRate',   label: 'Answer Rate',        fmt: v => pct(v, 1), kind: 'pct' },
+    { key: 'abandoned', label: 'Abandoned Calls',    fmt: int, lowerBetter: true },
+    { key: 'abRate',    label: 'Abandon Rate',       fmt: v => pct(v, 1), kind: 'pct', lowerBetter: true },
+    { key: 'aht',       label: 'Avg Handling Time',  fmt: hms, kind: 'time', neutral: true },
+    { key: 'sales',     label: 'Sales Closed',       fmt: int },
+    { key: 'rgu',       label: 'RGUs Sold',          fmt: int },
+    { key: 'conv',      label: 'Conversion Rate',    fmt: v => pct(v, 2), kind: 'pct' },
+    { key: 'points',    label: 'Total Points',       fmt: int },
+    { key: 'avgPts',    label: 'Avg Points / Sale',  fmt: v => v.toFixed(1), kind: 'dec' },
+  ];
+
+  // What can be compared per group (who/what changed).
+  const WC_KINDS = {
+    agents:    { label: 'Agents',    metrics: {
+      calls:  { label: 'Calls',  src: 'calls', key: c => c.agent, val: () => 1 },
+      sales:  { label: 'Sales',  src: 'sales', key: s => s.agent, val: () => 1 },
+      points: { label: 'Points', src: 'sales', key: s => s.agent, val: s => s.total || 0 } } },
+    queues:    { label: 'Queues',    metrics: {
+      calls:     { label: 'Calls',     src: 'calls', key: c => c.queue, val: () => 1 },
+      answered:  { label: 'Answered',  src: 'calls', key: c => c.queue, val: c => (c.result === 'Answered' ? 1 : 0) },
+      abandoned: { label: 'Abandoned', src: 'calls', key: c => c.queue, val: c => (c.result === 'Abandoned' ? 1 : 0), lowerBetter: true } } },
+    providers: { label: 'Providers', metrics: {
+      sales: { label: 'Sales', src: 'sales', key: s => s.provider, val: () => 1 },
+      rgu:   { label: 'RGUs',  src: 'sales', key: s => s.provider, val: s => s.rgu || 1 } } },
+    teams:     { label: 'Teams',     metrics: {
+      sales:  { label: 'Sales',  src: 'sales', key: s => s.team, val: () => 1 },
+      points: { label: 'Points', src: 'sales', key: s => s.team, val: s => s.total || 0 } } },
+    closers:   { label: 'Closers',   metrics: {
+      sales:  { label: 'Sales',  src: 'sales', key: s => s.closer, val: () => 1 },
+      points: { label: 'Points', src: 'sales', key: s => s.closer, val: s => s.total || 0 } } },
+  };
+
+  function wcMonday(dt) { return new Date(dt.getTime() - ((dt.getUTCDay() + 6) % 7) * DataEngine.DAY); }
+  function wcWeekList() {
+    const { min, max } = DataEngine.bounds, D = DataEngine.DAY, out = [];
+    const first = wcMonday(min);
+    for (let s = wcMonday(max); s >= first; s = new Date(s.getTime() - 7 * D)) out.push(s);
+    return out;
+  }
+  function wcRanges() {
+    const D = DataEngine.DAY, { max } = DataEngine.bounds;
+    const cs = WC.weekStart, fullEnd = new Date(cs.getTime() + 6 * D);
+    const ce = fullEnd > max ? max : fullEnd;
+    const ps = new Date(cs.getTime() - 7 * D);
+    const pe = WC.likeForLike ? new Date(ps.getTime() + (ce.getTime() - cs.getTime())) : new Date(cs.getTime() - D);
+    return { cur: { start: cs, end: ce }, prev: { start: ps, end: pe }, partial: ce < fullEnd };
+  }
+  const wcSpan = r => `${DataEngine.fmtDateShort(r.start)} – ${DataEngine.fmtDateFull(r.end)}`;
+  const wcDays = r => Math.round((r.end.getTime() - r.start.getTime()) / DataEngine.DAY) + 1;
+
+  function wcMetrics(calls, sales) {
+    const total = calls.length;
+    const ans = calls.filter(c => c.result === 'Answered');
+    const abandoned = calls.filter(c => c.result === 'Abandoned').length;
+    const aht = ans.length ? ans.reduce((a, c) => a + c.talk + c.hold + c.wrap, 0) / ans.length : 0;
+    const nSales = sales.length;
+    const rgu = sales.reduce((a, s) => a + (s.rgu || 1), 0);
+    const points = sales.reduce((a, s) => a + (s.total || 0), 0);
+    return {
+      total, answered: ans.length, ansRate: total ? ans.length / total * 100 : 0,
+      abandoned, abRate: total ? abandoned / total * 100 : 0, aht,
+      sales: nSales, rgu, conv: total ? nSales / total * 100 : 0, points, avgPts: nSales ? points / nSales : 0,
+    };
+  }
+
+  const wcSign = d => (d > 0 ? '+' : d < 0 ? '−' : '');
+  function wcChange(m, cur, prev) {
+    const diff = cur - prev;
+    const tiny = m.kind === 'pct' ? Math.abs(diff) < 0.05 : (prev ? Math.abs(diff / prev) < 0.005 : diff === 0);
+    const dir = tiny ? 0 : (diff > 0 ? 1 : -1);
+    let cls = 'flat';
+    if (dir !== 0 && !m.neutral) cls = ((m.lowerBetter ? -dir : dir) > 0) ? 'good' : 'bad';
+    const a = Math.abs(diff);
+    const abs = m.kind === 'pct' ? `${wcSign(dir)}${a.toFixed(1)} pp`
+      : m.kind === 'time' ? `${wcSign(dir)}${hms(a)}`
+      : m.kind === 'dec' ? `${wcSign(dir)}${a.toFixed(1)}`
+      : `${wcSign(dir)}${int(a)}`;
+    let rel = '—';
+    if (m.kind !== 'pct') {
+      const d = DataEngine.pctDelta(cur, prev);
+      rel = d === null ? (cur > 0 ? 'New' : '—') : `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d).toFixed(0)}%`;
+    }
+    const arrow = rel === '—' ? '' : (dir > 0 ? '▲ ' : dir < 0 ? '▼ ' : '');
+    return { diff, dir, cls, abs, rel, arrow, relNum: prev ? diff / prev : null };
+  }
+  const wcChipCls = c => (c === 'good' ? 'ty-delta good' : c === 'bad' ? 'ty-delta bad' : 'ty-delta flat');
+
+  function wcAgg(kind, metric, calls, sales) {
+    const def = WC_KINDS[kind].metrics[metric];
+    const rows = def.src === 'calls' ? calls : sales, m = new Map();
+    rows.forEach(r => { const k = def.key(r); if (!k) return; m.set(k, (m.get(k) || 0) + def.val(r)); });
+    return m;
+  }
+
+  function wcOpen() {
+    if (!dataLoaded) return;
+    const weeks = wcWeekList();
+    if (!WC.weekStart || !weeks.some(w => w.getTime() === WC.weekStart.getTime())) WC.weekStart = weeks[0];
+    WC.open = true;
+    $('#wcOverlay').hidden = false;
+    document.body.style.overflow = 'hidden';
+    $('#wcLike').checked = WC.likeForLike;
+    $('#wcFilters').checked = WC.useFilters;
+    renderWeeklyCompare();
+  }
+  function wcClose() {
+    WC.open = false;
+    $('#wcOverlay').hidden = true;
+    document.body.style.overflow = '';
+  }
+  function wcShift(dir) { // dir -1 = older, +1 = newer
+    const weeks = wcWeekList(); // newest first
+    const i = weeks.findIndex(w => w.getTime() === WC.weekStart.getTime());
+    const j = Math.min(weeks.length - 1, Math.max(0, i - dir));
+    WC.weekStart = weeks[j];
+    renderWeeklyCompare();
+  }
+
+  function wcData() {
+    const R = wcRanges();
+    const base = WC.useFilters ? currentFilter() : {};
+    const cf = Object.assign({}, base, R.cur), pf = Object.assign({}, base, R.prev);
+    const cCalls = DataEngine.filterCalls(cf), cSales = DataEngine.filterSales(cf);
+    const pCalls = DataEngine.filterCalls(pf), pSales = DataEngine.filterSales(pf);
+    return { R, cCalls, cSales, pCalls, pSales, cur: wcMetrics(cCalls, cSales), prev: wcMetrics(pCalls, pSales) };
+  }
+
+  function renderWeeklyCompare() {
+    if (!WC.open) return;
+    const weeks = wcWeekList();
+    const sel = $('#wcWeek');
+    sel.innerHTML = weeks.map((w, i) => {
+      const e = new Date(w.getTime() + 6 * DataEngine.DAY);
+      return `<option value="${DataEngine.fmtDate(w)}">${DataEngine.fmtDateShort(w)} – ${DataEngine.fmtDateShort(e)}${i === 0 ? '  (latest)' : ''}</option>`;
+    }).join('');
+    sel.value = DataEngine.fmtDate(WC.weekStart);
+    const idx = weeks.findIndex(w => w.getTime() === WC.weekStart.getTime());
+    $('#wcNewer').disabled = idx <= 0;
+    $('#wcOlder').disabled = idx >= weeks.length - 1;
+
+    const D = wcData();
+    const { R, cur, prev } = D;
+    const nFilters = WC.useFilters ? ['queues', 'agents', 'results', 'teams', 'providers', 'services'].reduce((a, k) => a + state[k].size, 0) : 0;
+    const noPrev = D.pCalls.length === 0 && D.pSales.length === 0;
+
+    // ---- period banner ----
+    const banner = `
+      <div class="wc__periods">
+        <div class="wc__period wc__period--prev"><span class="wc__tag">Previous week</span><b>${wcSpan(R.prev)}</b><small>${wcDays(R.prev)} day${wcDays(R.prev) === 1 ? '' : 's'}${WC.likeForLike && R.partial ? ' · trimmed to match current' : ''}</small></div>
+        <div class="wc__vs">vs</div>
+        <div class="wc__period wc__period--cur"><span class="wc__tag">Current week</span><b>${wcSpan(R.cur)}</b><small>${wcDays(R.cur)} day${wcDays(R.cur) === 1 ? '' : 's'}${R.partial ? ' · week still in progress' : ''}</small></div>
+      </div>
+      ${nFilters ? `<div class="wc__note">Dashboard filters applied (${nFilters} selected) — numbers below follow them. Untick "Use dashboard filters" to see everything.</div>` : ''}
+      ${noPrev ? `<div class="wc__note wc__note--warn">Previous week ke liye is range mein data nahi mila — comparison zero se ho raha hai.</div>` : ''}`;
+
+    // ---- highlights ----
+    const changes = WC_METRICS.map(m => ({ m, c: wcChange(m, cur[m.key], prev[m.key]) }))
+      .filter(x => !x.m.neutral && x.m.kind !== 'pct' && x.c.relNum !== null && prev[x.m.key] > 0);
+    const goodness = x => (x.m.lowerBetter ? -1 : 1) * x.c.relNum;
+    const sorted = changes.slice().sort((a, b) => goodness(b) - goodness(a));
+    const best = sorted[0] && goodness(sorted[0]) > 0.005 ? sorted[0] : null;
+    const worst = sorted[sorted.length - 1] && goodness(sorted[sorted.length - 1]) < -0.005 ? sorted[sorted.length - 1] : null;
+    const hl = card => card ? `<div class="wc__hl wc__hl--${card.cls}"><span>${card.title}</span><b>${card.text}</b></div>` : '';
+    const highlights = `<div class="wc__hls">
+      ${hl(best ? { cls: 'good', title: 'Biggest improvement', text: `${best.m.label}: ${best.m.fmt(prev[best.m.key])} → ${best.m.fmt(cur[best.m.key])} (${best.c.rel})` } : { cls: 'flat', title: 'Biggest improvement', text: 'Koi clear improvement nahi' })}
+      ${hl(worst ? { cls: 'bad', title: 'Needs attention', text: `${worst.m.label}: ${worst.m.fmt(prev[worst.m.key])} → ${worst.m.fmt(cur[worst.m.key])} (${worst.c.rel})` } : { cls: 'flat', title: 'Needs attention', text: 'Koi clear decline nahi' })}
+    </div>`;
+
+    // ---- KPI table ----
+    const kpiRows = WC_METRICS.map(m => {
+      const c = wcChange(m, cur[m.key], prev[m.key]);
+      return `<tr>
+        <td><b>${m.label}</b></td>
+        <td class="r">${m.fmt(prev[m.key])}</td>
+        <td class="r"><b>${m.fmt(cur[m.key])}</b></td>
+        <td class="r wc__diff wc__diff--${c.cls}">${c.abs}</td>
+        <td class="r"><span class="${wcChipCls(c.cls)}">${c.arrow}${c.rel}</span></td>
+      </tr>`;
+    }).join('');
+    const kpiTable = `<section class="wc__sec"><h3>Overall change</h3>
+      <div class="wc__scroll"><table class="tbl wc__tbl"><thead><tr><th>Metric</th><th class="r">Previous</th><th class="r">Current</th><th class="r">Change</th><th class="r">% Change</th></tr></thead><tbody>${kpiRows}</tbody></table></div>
+      <p class="wc__hint">Green = better, red = worse (Abandoned ke liye kam hona better hai). Rates ka change percentage points (pp) mein hai.</p></section>`;
+
+    // ---- day by day ----
+    const D1 = DataEngine.DAY, dn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const tally = (calls, sales) => { const m = new Map(); (WC.dayMetric === 'calls' ? calls : sales).forEach(r => m.set(r.dateStr, (m.get(r.dateStr) || 0) + 1)); return m; };
+    const cMap = tally(D.cCalls, D.cSales), pMap = tally(D.pCalls, D.pSales);
+    const days = dn.map((label, i) => {
+      const cd = new Date(R.cur.start.getTime() + i * D1), pd = new Date(R.prev.start.getTime() + i * D1);
+      const cv = cd <= R.cur.end ? (cMap.get(DataEngine.fmtDate(cd)) || 0) : null;
+      const pv = pd <= R.prev.end ? (pMap.get(DataEngine.fmtDate(pd)) || 0) : null;
+      return { label, cv, pv, cd, pd };
+    });
+    const dMax = Math.max(1, ...days.map(d => Math.max(d.cv || 0, d.pv || 0)));
+    const bar = (v, cls) => v === null ? `<div class="wc__bar wc__bar--na" title="No data"></div>` : `<div class="wc__bar ${cls}" style="height:${Math.max(2, v / dMax * 100)}%"><i>${int(v)}</i></div>`;
+    const dayChart = `<section class="wc__sec"><div class="wc__sechead"><h3>Day by day</h3>
+      <div class="seg seg--sm" data-wc="dayMetric"><button data-v="calls" aria-pressed="${WC.dayMetric === 'calls'}">Calls</button><button data-v="sales" aria-pressed="${WC.dayMetric === 'sales'}">Sales</button></div></div>
+      <div class="wc__legend"><span><i class="wc__sw wc__sw--prev"></i>Previous week</span><span><i class="wc__sw wc__sw--cur"></i>Current week</span></div>
+      <div class="wc__days">${days.map(d => `<div class="wc__day"><div class="wc__bars">${bar(d.pv, 'wc__bar--prev')}${bar(d.cv, 'wc__bar--cur')}</div><div class="wc__daylbl"><b>${d.label}</b><small>${DataEngine.fmtDateShort(d.cd)}</small></div></div>`).join('')}</div></section>`;
+
+    // ---- movers ----
+    const kindDef = WC_KINDS[WC.kind];
+    if (!kindDef.metrics[WC.metric]) WC.metric = Object.keys(kindDef.metrics)[0];
+    const mdef = kindDef.metrics[WC.metric];
+    const cAgg = wcAgg(WC.kind, WC.metric, D.cCalls, D.cSales), pAgg = wcAgg(WC.kind, WC.metric, D.pCalls, D.pSales);
+    const names = new Set([...cAgg.keys(), ...pAgg.keys()]);
+    const rows = [...names].map(n => { const c = cAgg.get(n) || 0, p = pAgg.get(n) || 0; return { n, c, p, d: c - p }; });
+    const up = rows.filter(r => r.d > 0).sort((a, b) => b.d - a.d).slice(0, 8);
+    const down = rows.filter(r => r.d < 0).sort((a, b) => a.d - b.d).slice(0, 8);
+    const mm = { lowerBetter: !!mdef.lowerBetter };
+    const list = (arr, title) => `<div class="wc__mv"><h4>${title}</h4>${arr.length ? `<ul>${arr.map(r => {
+      const ch = wcChange(mm, r.c, r.p);
+      return `<li><span class="wc__mvname" title="${escapeHtml(r.n)}">${escapeHtml(r.n)}</span><span class="wc__mvvals">${int(r.p)} → <b>${int(r.c)}</b></span><span class="${wcChipCls(ch.cls)}">${ch.abs}${r.p ? ` · ${ch.rel}` : ''}</span></li>`;
+    }).join('')}</ul>` : `<p class="wc__empty">Kuch nahi</p>`}</div>`;
+    const movers = `<section class="wc__sec"><div class="wc__sechead"><h3>Who changed?</h3>
+      <div class="wc__mvtools">
+        <div class="seg seg--sm" data-wc="kind">${Object.entries(WC_KINDS).map(([k, v]) => `<button data-v="${k}" aria-pressed="${WC.kind === k}">${v.label}</button>`).join('')}</div>
+        <div class="seg seg--sm" data-wc="metric">${Object.entries(kindDef.metrics).map(([k, v]) => `<button data-v="${k}" aria-pressed="${WC.metric === k}">${v.label}</button>`).join('')}</div>
+      </div></div>
+      <div class="wc__mvgrid">${list(up, `Increased most · ${mdef.label}`)}${list(down, `Decreased most · ${mdef.label}`)}</div></section>`;
+
+    $('#wcBody').innerHTML = banner + highlights + kpiTable + dayChart + movers;
+  }
+
+  function wcExportCsv() {
+    if (!WC.open) return;
+    const D = wcData();
+    const q = v => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [['Metric', 'Previous week', 'Current week', 'Change', '% Change'].map(q).join(',')];
+    WC_METRICS.forEach(m => {
+      const c = wcChange(m, D.cur[m.key], D.prev[m.key]);
+      lines.push([m.label, m.fmt(D.prev[m.key]), m.fmt(D.cur[m.key]), c.abs, c.rel].map(q).join(','));
+    });
+    lines.push('', [`Previous: ${wcSpan(D.R.prev)}`, `Current: ${wcSpan(D.R.cur)}`].map(q).join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `weekly-compare-${DataEngine.fmtDate(D.R.cur.start)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  function wireWeeklyCompare() {
+    const btn = $('#btnWeekly'); if (!btn) return;
+    btn.addEventListener('click', wcOpen);
+    $('#wcClose').addEventListener('click', wcClose);
+    $('#wcOverlay').addEventListener('click', e => { if (e.target.id === 'wcOverlay') wcClose(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && WC.open) wcClose(); });
+    $('#wcOlder').addEventListener('click', () => wcShift(-1));
+    $('#wcNewer').addEventListener('click', () => wcShift(1));
+    $('#wcWeek').addEventListener('change', e => {
+      const w = wcWeekList().find(x => DataEngine.fmtDate(x) === e.target.value);
+      if (w) { WC.weekStart = w; renderWeeklyCompare(); }
+    });
+    $('#wcLike').addEventListener('change', e => { WC.likeForLike = e.target.checked; renderWeeklyCompare(); });
+    $('#wcFilters').addEventListener('change', e => { WC.useFilters = e.target.checked; renderWeeklyCompare(); });
+    $('#wcExport').addEventListener('click', wcExportCsv);
+    $('#wcBody').addEventListener('click', e => {
+      const b = e.target.closest('.seg[data-wc] button'); if (!b) return;
+      const g = b.parentElement.dataset.wc;
+      if (g === 'dayMetric') WC.dayMetric = b.dataset.v;
+      else if (g === 'kind') { WC.kind = b.dataset.v; WC.metric = Object.keys(WC_KINDS[WC.kind].metrics)[0]; }
+      else if (g === 'metric') WC.metric = b.dataset.v;
+      renderWeeklyCompare();
+    });
+  }
+
   function wireStaticUI() {
+    wireWeeklyCompare();
     // theme
     $('#themeToggle').addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light', true));
 
