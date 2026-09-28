@@ -520,3 +520,59 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
    more specific alignment rules above (.tbl thead th, .tbl .r,
    .matrix__metric, etc.) which would otherwise still apply. */
 .tbl, .tbl *{ text-align:center !important }
+
+
+/* ---------- Hourly: Today vs Yesterday (cards + chart + insights) ---------- */
+.tyCompare{display:flex; flex-direction:column; gap:16px; min-width:0}
+.ty-cards{display:grid; grid-auto-flow:column; grid-auto-columns:minmax(190px,1fr); gap:12px; overflow-x:auto; padding:2px 2px 6px; scroll-snap-type:x proximity}
+.ty-card{
+  scroll-snap-align:start; text-align:left; display:flex; flex-direction:column; gap:4px; min-width:0;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); padding:14px 16px 10px;
+  cursor:pointer; font:inherit; color:inherit; position:relative; overflow:hidden;
+  opacity:0; transform:translateY(6px); animation:hourCellIn .38s cubic-bezier(.2,.7,.3,1) forwards;
+  transition:border-color .15s, box-shadow .15s, transform .15s;
+}
+.ty-card:hover{transform:translateY(-2px); box-shadow:var(--shadow-md)}
+.ty-card.is-on{border-color:var(--amber); box-shadow:0 0 0 2px color-mix(in srgb, var(--amber) 35%, transparent); background:var(--amber-soft)}
+.ty-card__label{font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+.ty-card.is-on .ty-card__label{color:var(--amber-ink)}
+.ty-card__value{font-size:30px; font-weight:800; line-height:1.1; font-variant-numeric:tabular-nums}
+.ty-card__row{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:12px}
+.ty-card__y{color:var(--muted)} .ty-card__y b{color:var(--text-2)}
+.ty-spark{width:100%; height:30px; margin-top:6px}
+.ty-spark polyline{fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
+.ty-spark .t{stroke:var(--amber-strong)}
+.ty-spark .y{stroke:var(--slate); stroke-dasharray:3 3; opacity:.8}
+.ty-delta{display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; font-size:11.5px; font-weight:700; white-space:nowrap}
+.ty-delta.good{background:var(--chip-up-bg); color:var(--chip-up-tx)}
+.ty-delta.bad{background:var(--chip-dn-bg); color:var(--chip-dn-tx)}
+.ty-delta.flat{background:var(--chip-flat-bg); color:var(--chip-flat-tx)}
+
+.ty-panel{display:flex; flex-direction:column}
+.ty-chart{display:flex; align-items:stretch; gap:6px; height:200px; overflow-x:auto; padding-bottom:2px}
+.ty-col{flex:1 0 34px; min-width:34px; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; border-radius:10px; padding:4px 2px 2px; transition:background .15s}
+.ty-col:hover{background:var(--surface-2)}
+.ty-col.is-pin{background:var(--amber-soft); box-shadow:inset 0 0 0 1.5px var(--amber)}
+.ty-col__bars{flex:1; width:100%; display:flex; align-items:flex-end; justify-content:center; gap:3px; border-bottom:1px solid var(--line-strong)}
+.ty-col__bars i{display:block; width:42%; max-width:16px; min-height:2px; border-radius:5px 5px 0 0; transition:height .35s cubic-bezier(.2,.7,.3,1)}
+.ty-col__bars .t{background:var(--amber)}
+.ty-col__bars .y{background:var(--slate); opacity:.55}
+.ty-col__lbl{font-size:11px; font-weight:600; color:var(--muted)}
+.ty-col.is-now .ty-col__lbl{color:var(--amber-strong)}
+.ty-col.is-now .ty-col__lbl::after{content:" •"}
+
+.ty-detail{margin-top:12px; border:1px solid var(--line); border-radius:14px; padding:10px 14px; background:var(--surface-2); display:flex; flex-direction:column; gap:6px}
+.ty-detail__hdr{font-size:12px; font-weight:800; color:var(--amber-ink)}
+[data-theme="dark"] .ty-detail__hdr{color:var(--amber)}
+.ty-detail__row{display:flex; align-items:center; gap:18px; flex-wrap:wrap; font-size:14px; font-weight:700; font-variant-numeric:tabular-nums}
+.ty-detail__row > b{width:74px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+.ty-detail__row.t > b{color:var(--amber-strong)}
+.ty-detail__row small{font-size:11px; font-weight:500; color:var(--muted)}
+
+.ty-insights{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-top:14px}
+.ty-ins{border:1px solid var(--line); border-radius:14px; padding:12px 14px; background:var(--surface); border-left:4px solid var(--amber)}
+.ty-ins.good{border-left-color:var(--green)} .ty-ins.bad{border-left-color:var(--rose)}
+.ty-ins__t{font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+.ty-ins__v{font-size:20px; font-weight:800; margin:3px 0 2px} .ty-ins__v small{font-size:12px; color:var(--muted); font-weight:600}
+.ty-ins__s{font-size:12px; color:var(--text-2)}
+@media (max-width:560px){ .ty-detail__row{gap:10px} .ty-chart{height:170px} }
