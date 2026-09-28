@@ -49,6 +49,9 @@
     tableSearch: { agents: '', queues: '', sales: '', closers: '', leads: '' },
     hourlyTZ: 'ct', // ct | pkt
     hourlyDay: 'today', // today | yesterday
+    hourlyMetric: 'sales', // sales | answered | rgu | missed | rate
+    hourlyMode: 'hourly', // hourly | cumulative
+    hourlyPin: null, // CT hour pinned in the compare chart
     page: 'overview', // overview | hourly | closerperf | leadperf
   };
 
@@ -898,41 +901,206 @@
     el2.innerHTML = html;
   }
 
-  function tyDelta(curr, prev) {
-    if (!prev) return { cls: 'flat', text: '—' };
-    if (curr === prev) return { cls: 'flat', text: '±0' };
-    const diff = curr - prev;
-    const pctChange = prev !== 0 ? Math.abs(diff / prev * 100) : 100;
-    const cls = diff > 0 ? 'up' : 'down';
-    const arrow = diff > 0 ? '▲' : '▼';
-    return { cls, text: `${arrow} ${pctChange.toFixed(0)}% vs ${prev === curr ? 'same' : (state.hourlyDay === 'today' ? 'yesterday' : 'the day before')}` };
+  // ---------------- Today vs Yesterday: cards + interactive hourly chart + insights ----------------
+  const TY_METRICS = {
+    sales:    { label: 'Sales',       bad: false },
+    answered: { label: 'Answered',    bad: false },
+    rgu:      { label: 'RGUs',        bad: false },
+    missed:   { label: 'Missed',      bad: true  },
+    rate:     { label: 'Answer Rate', bad: false, ratio: true },
+  };
+  let tyData = null;
+
+  function currentCtHour() {
+    try {
+      return Number(new Intl.DateTimeFormat('en-US', { hour: '2-digit', hourCycle: 'h23', timeZone: 'America/Chicago' }).format(new Date()));
+    } catch (e) { return new Date().getHours(); }
+  }
+  function tySum(buckets) {
+    const t = buckets.reduce((a, b) => { a.calls += b.calls; a.answered += b.answered; a.missed += b.missed; a.sales += b.sales; a.rgu += b.rgu; return a; }, { calls: 0, answered: 0, missed: 0, sales: 0, rgu: 0 });
+    const dec = t.answered + t.missed;
+    t.rate = dec ? t.answered / dec * 100 : 0;
+    return t;
+  }
+  function tyFmt(key, v) { return TY_METRICS[key].ratio ? pct(v, 1) : int(v); }
+  function tyDelta(key, curr, prev) {
+    const m = TY_METRICS[key];
+    if (m.ratio) {
+      const d = curr - prev;
+      if (Math.abs(d) < 0.05) return { cls: 'flat', text: '± 0 pts' };
+      return { cls: d > 0 ? 'good' : 'bad', text: `${d > 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)} pts` };
+    }
+    if (curr === prev) return { cls: 'flat', text: '± 0' };
+    const up = curr > prev;
+    const good = m.bad ? !up : up;
+    const text = prev === 0 ? `▲ +${int(curr)}` : `${up ? '▲' : '▼'} ${Math.abs((curr - prev) / prev * 100).toFixed(0)}%`;
+    return { cls: good ? 'good' : 'bad', text };
+  }
+  function tyValue(b, key) { return key === 'rate' ? (b.answered + b.missed ? b.answerRate : 0) : b[key]; }
+  function tySeries(rows, key, cumulative) {
+    if (!cumulative) return rows.map(b => tyValue(b, key));
+    let a = 0, m = 0, run = 0;
+    return rows.map(b => {
+      if (key === 'rate') { a += b.answered; m += b.missed; return (a + m) ? a / (a + m) * 100 : 0; }
+      run += b[key]; return run;
+    });
+  }
+  function tyShort(b) {
+    if (state.hourlyTZ === 'pkt') { const h = b.dispHour; return `${hr12(h)}${h < 12 ? 'a' : 'p'}`; }
+    return String(b.hour).padStart(2, '0');
+  }
+  function spark(tRows, yRows, key) {
+    const W = 100, H = 30, n = tRows.length;
+    if (n < 2) return '';
+    const tv = tySeries(tRows, key, false), yv = tySeries(yRows, key, false);
+    const max = Math.max(1, ...tv, ...yv);
+    const pts = arr => arr.map((v, i) => `${(i / (n - 1) * W).toFixed(1)},${(H - 2 - v / max * (H - 4)).toFixed(1)}`).join(' ');
+    return `<svg class="ty-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <polyline class="y" points="${pts(yv)}" vector-effect="non-scaling-stroke"/>
+      <polyline class="t" points="${pts(tv)}" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+  function argMax(arr, ok) {
+    let bi = -1, bv = -Infinity;
+    arr.forEach((v, i) => { if ((!ok || ok(i)) && v > bv) { bv = v; bi = i; } });
+    return bi;
   }
 
   function renderTYCompare(todayBuckets, yestBuckets) {
     const el2 = $('#tyCompare'); if (!el2) return;
-    const sum = buckets => buckets.reduce((a, b) => {
-      a.calls += b.calls; a.answered += b.answered; a.missed += b.missed;
-      a.sales += b.sales; a.rgu += b.rgu; return a;
-    }, { calls: 0, answered: 0, missed: 0, sales: 0, rgu: 0 });
-    const t = sum(todayBuckets), y = sum(yestBuckets);
-    const items = [
-      { label: 'Answered — Today', value: t.answered, cmp: y.answered },
-      { label: 'Answered — Yesterday', value: y.answered, cmp: null },
-      { label: 'Sales — Today', value: t.sales, cmp: y.sales },
-      { label: 'Sales — Yesterday', value: y.sales, cmp: null },
-      { label: 'RGUs — Today', value: t.rgu, cmp: y.rgu },
-      { label: 'RGUs — Yesterday', value: y.rgu, cmp: null },
-      { label: 'Missed — Today', value: t.missed, cmp: y.missed },
-      { label: 'Missed — Yesterday', value: y.missed, cmp: null },
-    ];
-    el2.innerHTML = items.map((it, i) => {
-      const d = it.cmp != null ? tyDelta(it.value, it.cmp) : null;
-      return `<div class="tyCompare__item" style="animation-delay:${i * 30}ms">
-        <div class="tyCompare__label">${it.label}</div>
-        <div class="tyCompare__value">${int(it.value)}</div>
-        ${d ? `<span class="tyCompare__delta ${d.cls}">${d.text}</span>` : ''}
-      </div>`;
+    tyData = { todayBuckets, yestBuckets };
+    const T = tySum(todayBuckets), Y = tySum(yestBuckets);
+    const tRowsAll = hourBucketsForDisplay(todayBuckets), yRowsAll = hourBucketsForDisplay(yestBuckets);
+    const idx = tRowsAll.map((_, i) => i).filter(i => tRowsAll[i].calls || tRowsAll[i].sales || yRowsAll[i].calls || yRowsAll[i].sales);
+    const tRows = idx.map(i => tRowsAll[i]), yRows = idx.map(i => yRowsAll[i]);
+    const key = state.hourlyMetric, cum = state.hourlyMode === 'cumulative', m = TY_METRICS[key];
+
+    // ---- metric cards (horizontal) ----
+    const cards = Object.keys(TY_METRICS).map((k, i) => {
+      const d = tyDelta(k, T[k], Y[k]);
+      return `<button type="button" class="ty-card${k === key ? ' is-on' : ''}" data-metric="${k}" aria-pressed="${k === key}" style="animation-delay:${i * 40}ms">
+        <span class="ty-card__label">${TY_METRICS[k].label}</span>
+        <span class="ty-card__value">${tyFmt(k, T[k])}</span>
+        <span class="ty-card__row"><span class="ty-delta ${d.cls}">${d.text}</span><span class="ty-card__y">Yesterday <b>${tyFmt(k, Y[k])}</b></span></span>
+        ${spark(tRows, yRows, k)}
+      </button>`;
     }).join('');
+
+    // ---- chart ----
+    let chart;
+    if (!tRows.length) {
+      chart = '<div class="empty">No calls or sales yet for today or yesterday.</div>';
+    } else {
+      const tv = tySeries(tRows, key, cum), yv = tySeries(yRows, key, cum);
+      const max = Math.max(1, ...tv, ...yv);
+      const nowH = currentCtHour();
+      if (state.hourlyPin == null || !tRows.some(r => r.hour === state.hourlyPin)) {
+        const base = tySeries(tRows, key === 'rate' ? 'answered' : key, false);
+        let pi = argMax(base);
+        if (pi < 0 || base[pi] <= 0) pi = argMax(tRows.map(r => r.calls));
+        state.hourlyPin = tRows[Math.max(0, pi)].hour;
+      }
+      chart = `<div class="ty-chart" id="tyChart">${tRows.map((b, i) => `
+        <div class="ty-col${b.hour === state.hourlyPin ? ' is-pin' : ''}${b.hour === nowH ? ' is-now' : ''}" data-i="${i}" data-hour="${b.hour}">
+          <div class="ty-col__bars">
+            <i class="y" style="height:${(yv[i] / max * 100).toFixed(1)}%"></i>
+            <i class="t" style="height:${(tv[i] / max * 100).toFixed(1)}%"></i>
+          </div>
+          <span class="ty-col__lbl">${tyShort(b)}</span>
+        </div>`).join('')}</div>`;
+    }
+
+    // ---- insights (today) ----
+    const tBase = tySeries(tRows, key === 'rate' ? 'answered' : key, false);
+    const pk = tRows.length ? argMax(tBase) : -1;
+    const totalMetric = tBase.reduce((a, v) => a + v, 0);
+    const peakTile = (pk >= 0 && tBase[pk] > 0)
+      ? { t: `Peak hour · ${key === 'rate' ? 'Answered' : m.label}`, v: tRows[pk].label, s: `${int(tBase[pk])} · ${totalMetric ? (tBase[pk] / totalMetric * 100).toFixed(0) : 0}% of today` }
+      : { t: `Peak hour · ${m.label}`, v: '—', s: 'No activity yet' };
+
+    const ct = currentCtHour();
+    const paceKey = key === 'rate' ? 'answered' : key;
+    const done = b => b.hour < ct;
+    const tp = todayBuckets.filter(done).reduce((a, b) => a + b[paceKey], 0);
+    const yp = yestBuckets.filter(done).reduce((a, b) => a + b[paceKey], 0);
+    const pd = tyDelta(paceKey, tp, yp);
+    const paceTile = { t: `Pace · ${TY_METRICS[paceKey].label}`, v: `${int(tp)} <small>vs ${int(yp)}</small>`, s: ct > 0 ? `Completed hours so far · <span class="ty-delta ${pd.cls}">${pd.text}</span>` : 'Day just started', cls: pd.cls };
+
+    const bestI = argMax(tRows.map(b => b.answerRate), i => (tRows[i].answered + tRows[i].missed) >= 3);
+    const bestTile = bestI >= 0
+      ? { t: 'Best answer rate', v: tRows[bestI].label, s: `${pct(tRows[bestI].answerRate, 0)} of ${int(tRows[bestI].answered + tRows[bestI].missed)} decided calls`, cls: 'good' }
+      : { t: 'Best answer rate', v: '—', s: 'Needs 3+ decided calls in an hour' };
+
+    const missI = argMax(tRows.map(b => b.missed));
+    const missTile = (missI >= 0 && tRows[missI].missed > 0)
+      ? { t: 'Most missed', v: tRows[missI].label, s: `${int(tRows[missI].missed)} missed · ${pct(tRows[missI].missedPct, 0)} of decided`, cls: 'bad' }
+      : { t: 'Most missed', v: 'None', s: 'No missed calls today', cls: 'good' };
+
+    const tiles = [peakTile, paceTile, bestTile, missTile].map(x => `<div class="ty-ins ${x.cls || ''}"><div class="ty-ins__t">${x.t}</div><div class="ty-ins__v">${x.v}</div><div class="ty-ins__s">${x.s}</div></div>`).join('');
+
+    el2.innerHTML = `
+      <div class="ty-cards">${cards}</div>
+      <div class="card ty-panel">
+        <div class="card__head">
+          <div>
+            <div class="card__title">${m.label} by hour — Today vs Yesterday</div>
+            <div class="card__sub">Hover a column for numbers · click to pin it below · ${state.hourlyTZ === 'pkt' ? 'Pakistan Time' : 'Central Time'}</div>
+          </div>
+          <div class="card__tools">
+            <span class="legend"><span><i style="background:var(--amber)"></i>Today</span><span><i style="background:var(--slate)"></i>Yesterday</span></span>
+            <div class="seg seg--sm" data-group="tyMode">
+              <button data-mode="hourly" aria-pressed="${!cum}">Hourly</button>
+              <button data-mode="cumulative" aria-pressed="${cum}">Cumulative</button>
+            </div>
+          </div>
+        </div>
+        ${chart}
+        <div class="ty-detail" id="tyDetail"></div>
+        <div class="ty-insights">${tiles}</div>
+      </div>`;
+
+    renderTYDetail(tRows, yRows);
+    wireTY(el2, tRows, yRows, key, cum);
+  }
+
+  function renderTYDetail(tRows, yRows) {
+    const box = $('#tyDetail'); if (!box) return;
+    const i = tRows.findIndex(r => r.hour === state.hourlyPin);
+    if (i < 0) { box.innerHTML = ''; return; }
+    const t = tRows[i], y = yRows[i];
+    const line = (lbl, b, cls) => `<div class="ty-detail__row ${cls}"><b>${lbl}</b>
+      <span>${int(b.sales)} <small>sales</small></span><span>${int(b.rgu)} <small>RGUs</small></span>
+      <span>${int(b.answered)} <small>answered</small></span><span>${int(b.missed)} <small>missed</small></span>
+      <span>${(b.answered + b.missed) ? pct(b.answerRate, 0) : '—'} <small>answer rate</small></span></div>`;
+    box.innerHTML = `<div class="ty-detail__hdr">${t.label}</div>${line('Today', t, 't')}${line('Yesterday', y, 'y')}`;
+  }
+
+  function wireTY(el2, tRows, yRows, key, cum) {
+    $$('.ty-card', el2).forEach(c => c.addEventListener('click', () => {
+      state.hourlyMetric = c.dataset.metric;
+      renderTYCompare(tyData.todayBuckets, tyData.yestBuckets);
+    }));
+    $$('.seg[data-group="tyMode"] button', el2).forEach(b => b.addEventListener('click', () => {
+      state.hourlyMode = b.dataset.mode;
+      renderTYCompare(tyData.todayBuckets, tyData.yestBuckets);
+    }));
+    const tv = tySeries(tRows, key, cum), yv = tySeries(yRows, key, cum);
+    $$('.ty-col', el2).forEach(col => {
+      const i = Number(col.dataset.i);
+      col.addEventListener('mousemove', evt => {
+        const t = tRows[i], hourlyT = tyValue(t, key), hourlyY = tyValue(yRows[i], key);
+        const extra = cum ? `<br/><span style="opacity:.7">this hour: ${tyFmt(key, hourlyT)} vs ${tyFmt(key, hourlyY)}</span>` : '';
+        Charts.showTip(evt, `<div class="t">${t.label}</div>
+          <div class="row"><span><i style="background:var(--amber)"></i>Today</span><b>${tyFmt(key, tv[i])}</b></div>
+          <div class="row"><span><i style="background:var(--slate)"></i>Yesterday</span><b>${tyFmt(key, yv[i])}</b></div>${extra}`);
+        Charts.moveTip(evt);
+      });
+      col.addEventListener('mouseleave', Charts.hideTip);
+      col.addEventListener('click', () => {
+        state.hourlyPin = tRows[i].hour;
+        $$('.ty-col', el2).forEach(c => c.classList.toggle('is-pin', c === col));
+        renderTYDetail(tRows, yRows);
+      });
+    });
   }
 
   function renderHourly(calls, sales) {
