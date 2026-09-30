@@ -272,6 +272,15 @@ const DataEngine = (() => {
     return ((cur - prev) / prev) * 100;
   }
 
+  // Shared "is this row in the reported call centers?" checks (used by the
+  // Weekly Compare so it only covers REPORT_QUEUES, like the Daily report).
+  // Abandoned calls from ABANDON_EXCLUDE_QUEUES (Group 13 OB CB, Group 18) are dropped
+  // entirely, same as the Daily report never counting them as Missed.
+  const isReportCall = c => REPORT_QUEUES.includes(c.queue)
+    && !(c.result === 'Abandoned' && ABANDON_EXCLUDE_QUEUES.includes(c.queue));
+  const isReportSale = s => REPORT_QUEUES.includes(s.campaign)
+    || REPORT_QUEUES.some(g => (s.campaign || '').startsWith(g.split(' ')[0]));
+
   // ---------------- Daily Call Center Report ----------------
   // One row-group per calendar date, restricted to REPORT_QUEUES only.
   // Missed (Abandoned) never counts calls from ABANDON_EXCLUDE_QUEUES,
@@ -331,6 +340,6 @@ const DataEngine = (() => {
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
     filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats, dailyHourlyMatrix, dailyReport,
-    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, ABANDON_EXCLUDE_QUEUES,
+    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, isReportCall, isReportSale, ABANDON_EXCLUDE_QUEUES,
   };
 })();
