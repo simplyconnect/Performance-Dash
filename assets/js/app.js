@@ -1479,8 +1479,9 @@
     const R = wcRanges();
     const base = WC.useFilters ? currentFilter() : {};
     const cf = Object.assign({}, base, R.cur), pf = Object.assign({}, base, R.prev);
-    const cCalls = DataEngine.filterCalls(cf), cSales = DataEngine.filterSales(cf);
-    const pCalls = DataEngine.filterCalls(pf), pSales = DataEngine.filterSales(pf);
+    // Weekly Compare covers ONLY the reported call-center groups (REPORT_QUEUES in data.js).
+    const cCalls = DataEngine.filterCalls(cf).filter(DataEngine.isReportCall), cSales = DataEngine.filterSales(cf).filter(DataEngine.isReportSale);
+    const pCalls = DataEngine.filterCalls(pf).filter(DataEngine.isReportCall), pSales = DataEngine.filterSales(pf).filter(DataEngine.isReportSale);
     return { R, cCalls, cSales, pCalls, pSales, cur: wcMetrics(cCalls, cSales), prev: wcMetrics(pCalls, pSales) };
   }
 
