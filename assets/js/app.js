@@ -1542,7 +1542,7 @@
       <p class="wc__hint">Green = better, red = worse (Abandoned ke liye kam hona better hai). Rates ka change percentage points (pp) mein hai.</p></section>`;
 
     // ---- day by day ----
-    const D1 = DataEngine.DAY, dn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const D1 = DataEngine.DAY, dn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const tally = (calls, sales) => { const m = new Map(); (WC.dayMetric === 'calls' ? calls : sales).forEach(r => m.set(r.dateStr, (m.get(r.dateStr) || 0) + 1)); return m; };
     const cMap = tally(D.cCalls, D.cSales), pMap = tally(D.pCalls, D.pSales);
     const days = dn.map((label, i) => {
