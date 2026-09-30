@@ -662,7 +662,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 .wc__sw{width:12px; height:12px; border-radius:4px; display:inline-block}
 .wc__sw--prev,.wc__bar--prev{background:var(--violet)}
 .wc__sw--cur,.wc__bar--cur{background:var(--amber)}
-.wc__days{display:grid; grid-template-columns:repeat(7,1fr); gap:10px}
+.wc__days{display:grid; grid-template-columns:repeat(6,1fr); gap:10px}
 .wc__bars{height:170px; display:flex; align-items:flex-end; justify-content:center; gap:5px; padding-top:18px; border-bottom:1px solid var(--line-strong)}
 .wc__bar{position:relative; flex:1; max-width:34px; border-radius:6px 6px 0 0; min-height:2px}
 .wc__bar i{position:absolute; left:50%; bottom:100%; transform:translateX(-50%); font-style:normal; font-size:10.5px; font-weight:700; color:var(--text-2); padding-bottom:2px; white-space:nowrap}
