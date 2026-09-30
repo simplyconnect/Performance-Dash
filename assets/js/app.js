@@ -1398,10 +1398,10 @@
   }
   function wcRanges() {
     const D = DataEngine.DAY, { max } = DataEngine.bounds;
-    const cs = WC.weekStart, fullEnd = new Date(cs.getTime() + 6 * D);
+    const cs = WC.weekStart, fullEnd = new Date(cs.getTime() + 5 * D); // week = Mon–Sat (Sunday excluded)
     const ce = fullEnd > max ? max : fullEnd;
     const ps = new Date(cs.getTime() - 7 * D);
-    const pe = WC.likeForLike ? new Date(ps.getTime() + (ce.getTime() - cs.getTime())) : new Date(cs.getTime() - D);
+    const pe = WC.likeForLike ? new Date(ps.getTime() + (ce.getTime() - cs.getTime())) : new Date(ps.getTime() + 5 * D);
     return { cur: { start: cs, end: ce }, prev: { start: ps, end: pe }, partial: ce < fullEnd };
   }
   const wcSpan = r => `${DataEngine.fmtDateShort(r.start)} – ${DataEngine.fmtDateFull(r.end)}`;
@@ -1490,7 +1490,7 @@
     const weeks = wcWeekList();
     const sel = $('#wcWeek');
     sel.innerHTML = weeks.map((w, i) => {
-      const e = new Date(w.getTime() + 6 * DataEngine.DAY);
+      const e = new Date(w.getTime() + 5 * DataEngine.DAY);
       return `<option value="${DataEngine.fmtDate(w)}">${DataEngine.fmtDateShort(w)} – ${DataEngine.fmtDateShort(e)}${i === 0 ? '  (latest)' : ''}</option>`;
     }).join('');
     sel.value = DataEngine.fmtDate(WC.weekStart);
