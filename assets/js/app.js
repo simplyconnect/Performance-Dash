@@ -1682,7 +1682,8 @@
     // rail navigation: smooth-scroll to section + track active state
     const railBtns = $$('.rail__btn[data-goto]');
     railBtns.forEach(b => b.addEventListener('click', () => {
-      switchPage('overview');
+      const scoped = state.page === 'groups' || state.page === 'fiber';
+      if (!scoped || b.dataset.goto === 'top') switchPage('overview');
       const target = document.getElementById(b.dataset.goto);
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
@@ -1714,6 +1715,10 @@
       });
     });
 
+    // Call Center Groups / Fiber pages (same dashboard, scoped to those queues)
+    $$('.rail__btn[data-page="groups"], .rail__btn[data-page="fiber"]').forEach(b =>
+      b.addEventListener('click', () => switchPage(b.dataset.page)));
+
     // Closer Performance tab
     const railClosers = $('#rail_closerperf');
     if (railClosers) railClosers.addEventListener('click', () => switchPage('closerperf'));
@@ -1729,11 +1734,20 @@
     if (viewAllLeads) viewAllLeads.addEventListener('click', () => switchPage('leadperf'));
   }
 
+  const SCOPE_META = {
+    all:    { title: 'Overview',           sub: 'All queues' },
+    groups: { title: 'Call Center Groups', sub: '' },
+    fiber:  { title: 'Fiber',              sub: '' },
+  };
+
   function switchPage(id) {
+    const scope = (id === 'groups' || id === 'fiber') ? id : 'all';
+    const scopeChanged = DataEngine.getScope() !== scope;
     state.page = id;
+    DataEngine.setScope(scope);
     const setHidden = (sel, val) => { const el2 = $(sel); if (el2) el2.hidden = val; };
     const setCurrent = sel => { const el2 = $(sel); if (el2) el2.setAttribute('aria-current', 'page'); };
-    setHidden('#top', id !== 'overview');
+    setHidden('#top', !(id === 'overview' || scope !== 'all'));
     setHidden('#page-closers', id !== 'closerperf');
     setHidden('#page-leads', id !== 'leadperf');
     $$('.rail__btn[data-goto], .rail__btn[data-page]').forEach(b => b.removeAttribute('aria-current'));
@@ -1743,9 +1757,29 @@
     } else if (id === 'leadperf') {
       setCurrent('#rail_leadperf');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (scope !== 'all') {
+      setCurrent(`.rail__btn[data-page="${scope}"]`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       setCurrent('.rail__btn[data-goto="top"]');
     }
+    renderScopeBar(scope);
+    if (scopeChanged && dataLoaded) {
+      // a queue picked on one page must not leak into another page's scope
+      state.queues.clear();
+      populateFilterOptions();
+      renderAll();
+    }
+  }
+
+  function renderScopeBar(scope) {
+    const bar = $('#scopeBar'); if (!bar) return;
+    if (scope === 'all') { bar.hidden = true; bar.innerHTML = ''; return; }
+    const list = scope === 'fiber' ? DataEngine.FIBER_QUEUES : DataEngine.REPORT_QUEUES;
+    bar.hidden = false;
+    bar.innerHTML = `<div><h2 class="hourlyHead__title">${escapeHtml(SCOPE_META[scope].title)}</h2>`
+      + `<p class="hourlyHead__sub">Full dashboard — sirf in ${list.length} queues ka data: calls, sales, agents, hourly sab kuch.</p></div>`
+      + `<div class="scopeChips">${list.map(q => `<span class="scopeChip">${escapeHtml(q)}</span>`).join('')}</div>`;
   }
 
   function togglePop(sel) {
