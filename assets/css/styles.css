@@ -100,7 +100,7 @@ svg{display:block}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 /* ---------- App frame ---------- */
-.app{display:grid; grid-template-columns:84px minmax(0,1fr); gap:18px; padding:18px; min-height:100vh}
+.app{display:grid; grid-template-columns:196px minmax(0,1fr); gap:18px; padding:18px; min-height:100vh}
 .rail{
   position:sticky; top:18px; height:calc(100vh - 36px);
   background:var(--side); border-radius:var(--r-xl);
@@ -108,22 +108,22 @@ svg{display:block}
 }
 .rail__logo{width:48px;height:48px;border-radius:16px;background:#fff;display:grid;place-items:center;margin-bottom:14px}
 .rail__logo img{height:28px;width:auto}
-.rail__nav{display:flex;flex-direction:column;gap:8px;align-items:center;flex:1}
+.rail__nav{display:flex;flex-direction:column;gap:6px;align-items:stretch;flex:1;width:100%;padding:0 10px;overflow-y:auto;scrollbar-width:none}
+.rail__nav::-webkit-scrollbar{display:none}
 .rail__btn{
-  position:relative; width:46px;height:46px;border-radius:50%;
-  display:grid;place-items:center; color:var(--side-text); transition:background .15s,color .15s;
+  position:relative; width:100%; min-height:42px; border-radius:14px; padding:0 12px;
+  display:flex; align-items:center; gap:10px; text-align:left;
+  color:var(--side-text); transition:background .15s,color .15s;
 }
 .rail__btn:hover{background:var(--side-hover); color:#fff}
 .rail__btn[aria-current="page"]{background:var(--amber); color:#1B1712}
-.rail__btn svg{width:22px;height:22px}
-.rail__btn .tipl{
-  position:absolute; left:58px; top:50%; transform:translateY(-50%); white-space:nowrap;
-  background:#000; color:#fff; font-size:12px; font-weight:600; padding:5px 10px; border-radius:8px;
-  opacity:0; pointer-events:none; transition:opacity .12s; z-index:60;
-}
-.rail__btn:hover .tipl, .rail__btn:focus-visible .tipl{opacity:1}
-.rail__theme{background:var(--amber);color:#1B1712;width:44px;height:44px}
+.rail__btn svg{width:20px;height:20px;flex:none}
+.rail__label{font-size:13px; font-weight:600; line-height:1.2; white-space:normal}
+.rail__theme{background:var(--amber);color:#1B1712;width:calc(100% - 20px);margin:6px 10px 0;min-height:42px}
 .rail__theme:hover{background:var(--amber);color:#1B1712;filter:brightness(1.06)}
+.scopeBar{align-items:flex-start; gap:14px; flex-wrap:wrap}
+.scopeChips{display:flex; flex-wrap:wrap; gap:6px}
+.scopeChip{font-size:12px; font-weight:600; padding:4px 10px; border-radius:999px; background:var(--surface-2); color:var(--text-2); border:1px solid var(--line-strong)}
 
 .main{min-width:0; display:flex; flex-direction:column; gap:14px}
 
@@ -428,9 +428,11 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
     justify-content:space-between; z-index:100; border-radius:22px; box-shadow:var(--shadow-md);
   }
   .rail__logo{display:none}
-  .rail__nav{flex-direction:row; flex:1; justify-content:space-around}
-  .rail__btn .tipl{display:none}
-  .rail__theme{margin-left:8px}
+  .rail__nav{flex-direction:row; flex:1; justify-content:flex-start; gap:4px; padding:0; overflow-x:auto; overflow-y:hidden; align-items:center}
+  .rail__btn{flex-direction:column; justify-content:center; gap:3px; width:auto; min-width:62px; min-height:54px; padding:4px 6px; text-align:center; flex:none}
+  .rail__btn svg{width:20px;height:20px}
+  .rail__label{font-size:10px; white-space:normal; max-width:70px}
+  .rail__theme{margin:0 0 0 6px; width:auto; min-width:56px; flex:none}
   .topbar{padding:8px 10px 8px 16px; flex-wrap:wrap}
   .topbar__sub{display:none}
   .topbar__logo{display:block}
