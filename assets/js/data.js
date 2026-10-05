@@ -20,6 +20,45 @@ const DataEngine = (() => {
   // (their calls/answered/sales still count, only their abandons don't).
   const ABANDON_EXCLUDE_QUEUES = ['Group 10 FB $99', 'Group 13 OB CB', 'Group 18'];
 
+  // ---------------- Page scopes (sidebar buttons) ----------------
+  // 'all'    -> Overview (every queue, original behaviour)
+  // 'groups' -> "Call Center Groups" page (REPORT_QUEUES above)
+  // 'fiber'  -> "Fiber" page (queues below). Names are matched ignoring
+  //             case/spaces, so "Fiber3" / "Fiber 3" both work.
+  const FIBER_QUEUES = ['Fiber 4', 'Fiber3', 'Fiber Opp', 'Fiber2'];
+  let scope = 'all';
+  const normQ = v => String(v == null ? '' : v).toLowerCase().replace(/\s+/g, '');
+  function scopeQueues() { return scope === 'fiber' ? FIBER_QUEUES : scope === 'groups' ? REPORT_QUEUES : null; }
+  function setScope(name) { scope = (name === 'groups' || name === 'fiber') ? name : 'all'; }
+  function getScope() { return scope; }
+  // Fiber page only counts calls whose Talk Time is greater than 0:01:59
+  // (i.e. 2:00 or more). Change FIBER_MIN_TALK_SEC to adjust the cut-off.
+  const FIBER_MIN_TALK_SEC = 119;
+  function talkOk(c) { return scope !== 'fiber' || (Number(c.talk) || 0) > FIBER_MIN_TALK_SEC; }
+  function callInScope(c) {
+    const list = scopeQueues(); if (!list) return true;
+    const q = normQ(c.queue);
+    return list.some(x => normQ(x) === q) && talkOk(c);
+  }
+  function saleInScope(s) {
+    const list = scopeQueues(); if (!list) return true;
+    const camp = normQ(s.campaign);
+    if (!camp) return false;
+    return list.some(x => {
+      const n = normQ(x);
+      if (camp === n) return true;
+      return camp.startsWith(n) && !/[0-9]/.test(camp.charAt(n.length));
+    });
+  }
+  // Queue is part of the "reported" set for the current page.
+  function inReportScope(queue) {
+    return scope === 'fiber' ? FIBER_QUEUES.some(x => normQ(x) === normQ(queue)) : REPORT_QUEUES.includes(queue);
+  }
+  function saleInReportScope(s) {
+    if (scope !== 'all') return saleInScope(s);
+    return REPORT_QUEUES.includes(s.campaign) || REPORT_QUEUES.some(g => (s.campaign || '').startsWith(g.split(' ')[0]));
+  }
+
   let raw = null;      // parsed payload
   let calls = [];      // expanded call rows
   let sales = [];       // expanded sale rows
@@ -110,7 +149,7 @@ const DataEngine = (() => {
     return { meta: json.meta, generatedAt: json.generatedAt, source: json.source, bounds };
   }
 
-  function distinctQueues() { return Array.from(new Set(calls.map(c => c.queue))).sort(); }
+  function distinctQueues() { return Array.from(new Set(calls.filter(callInScope).map(c => c.queue))).sort(); }
   function distinctAgents() { return Array.from(new Set(calls.map(c => c.agent).filter(Boolean))).sort(); }
   function distinctResults() { return Array.from(new Set(calls.map(c => c.result))).sort(); }
   function distinctTeams() { return Array.from(new Set(sales.map(s => s.team).filter(Boolean))).sort(); }
@@ -124,10 +163,10 @@ const DataEngine = (() => {
   function passSet(v, set) { return !set || set.size === 0 || set.has(v); }
 
   function filterCalls(f) {
-    return calls.filter(c => inRange(c.date, f) && passSet(c.queue, f.queues) && passSet(c.agent, f.agents) && passSet(c.result, f.results));
+    return calls.filter(c => inRange(c.date, f) && callInScope(c) && passSet(c.queue, f.queues) && passSet(c.agent, f.agents) && passSet(c.result, f.results));
   }
   function filterSales(f) {
-    return sales.filter(s => inRange(s.date, f)
+    return sales.filter(s => inRange(s.date, f) && saleInScope(s)
       && (!f.queues || f.queues.size === 0 || f.queues.has(s.campaign) || [...f.queues].some(q => (s.campaign || '').startsWith(q.split(' ')[0])))
       && passSet(s.agent, f.agents)
       && passSet(s.team, f.teams)
@@ -158,7 +197,7 @@ const DataEngine = (() => {
   //   answerRate = Answered / (Answered + Missed) × 100
   //   missedPct  = Missed   / (Answered + Missed) × 100
   function classifyCall(b, c) {
-    if (!REPORT_QUEUES.includes(c.queue)) return;
+    if (!inReportScope(c.queue)) return;
     b.calls++;
     if (c.result === 'Answered') b.answered++;
     else if (c.result === 'Abandoned' && !ABANDON_EXCLUDE_QUEUES.includes(c.queue)) b.missed++;
@@ -209,7 +248,7 @@ const DataEngine = (() => {
       hour: h, calls: 0, answered: 0, missed: 0, sales: 0, points: 0, rgu: 0,
     }));
     calls.forEach(c => {
-      if (c.dateStr !== day || !REPORT_QUEUES.includes(c.queue)) return;
+      if (c.dateStr !== day || !inReportScope(c.queue) || !talkOk(c)) return;
       if (c.hour == null || c.hour < 0 || c.hour > 23) return;
       const b = buckets[c.hour];
       b.calls++;
@@ -217,7 +256,7 @@ const DataEngine = (() => {
       else if (c.result === 'Abandoned' && !ABANDON_EXCLUDE_QUEUES.includes(c.queue)) b.missed++;
     });
     sales.forEach(s => {
-      if (s.dateStr !== day) return;
+      if (s.dateStr !== day || !saleInScope(s)) return;
       if (s.h == null || s.h < 0 || s.h > 23) return;
       addSale(buckets[s.h], s);
     });
@@ -276,10 +315,9 @@ const DataEngine = (() => {
   // Weekly Compare so it only covers REPORT_QUEUES, like the Daily report).
   // Abandoned calls from ABANDON_EXCLUDE_QUEUES (Group 13 OB CB, Group 18) are dropped
   // entirely, same as the Daily report never counting them as Missed.
-  const isReportCall = c => REPORT_QUEUES.includes(c.queue)
+  const isReportCall = c => inReportScope(c.queue)
     && !(c.result === 'Abandoned' && ABANDON_EXCLUDE_QUEUES.includes(c.queue));
-  const isReportSale = s => REPORT_QUEUES.includes(s.campaign)
-    || REPORT_QUEUES.some(g => (s.campaign || '').startsWith(g.split(' ')[0]));
+  const isReportSale = s => saleInReportScope(s);
 
   // ---------------- Daily Call Center Report ----------------
   // One row-group per calendar date, restricted to REPORT_QUEUES only.
@@ -291,9 +329,8 @@ const DataEngine = (() => {
   // Sales are also broken down by Provider (one sub-row per provider that
   // had a sale that day) since calls have no provider of their own.
   function dailyReport(filteredCalls, filteredSales) {
-    const inReport = c => REPORT_QUEUES.includes(c.queue);
-    const salesInReport = s => REPORT_QUEUES.includes(s.campaign)
-      || REPORT_QUEUES.some(g => (s.campaign || '').startsWith(g.split(' ')[0]));
+    const inReport = c => inReportScope(c.queue);
+    const salesInReport = s => saleInReportScope(s);
 
     const days = new Map(); // dateStr -> row
     function ensureDay(dateStr, date) {
@@ -340,6 +377,6 @@ const DataEngine = (() => {
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
     filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats, dailyHourlyMatrix, dailyReport,
-    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, isReportCall, isReportSale, ABANDON_EXCLUDE_QUEUES,
+    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, FIBER_QUEUES, setScope, getScope, isReportCall, isReportSale, ABANDON_EXCLUDE_QUEUES,
   };
 })();
