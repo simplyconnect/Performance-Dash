@@ -40,7 +40,20 @@ const DataEngine = (() => {
     const q = normQ(c.queue);
     return list.some(x => normQ(x) === q) && talkOk(c);
   }
+  // Fiber SALES are identified by the sheet's "Call Received from Queue Name"
+  // column (feed field: s.queue) — NOT by gRPCampaign Number (Group 48/44...),
+  // because one Group campaign can receive Fiber and non-Fiber calls.
+  // Values seen in the sheet: Fiber Op, Fiber 2, Fiber 3, Fiber 4 (Group Call,
+  // Non Fiber 1/2, Wireless are NOT fiber). Matching ignores case/spaces and
+  // accepts both "Fiber Op" and "Fiber Opp".
+  const FIBER_SALE_QUEUES = ['Fiber 4', 'Fiber 3', 'Fiber Op', 'Fiber Opp', 'Fiber 2'];
+  const saleQueueOf = s => s.queue || s.callQueue || s.receivedQueue || '';
+  function isFiberSale(s) {
+    const q = normQ(saleQueueOf(s));
+    return !!q && FIBER_SALE_QUEUES.some(x => normQ(x) === q);
+  }
   function saleInScope(s) {
+    if (scope === 'fiber') return isFiberSale(s);
     const list = scopeQueues(); if (!list) return true;
     const camp = normQ(s.campaign);
     if (!camp) return false;
@@ -162,12 +175,24 @@ const DataEngine = (() => {
   function inRange(dt, f) { const t = dt.getTime(); return t >= f.start.getTime() && t <= f.end.getTime(); }
   function passSet(v, set) { return !set || set.size === 0 || set.has(v); }
 
+  // Queue multi-select -> sales. Fiber page: compare with the sale's
+  // "Call Received from Queue Name" (Fiber Op == Fiber Opp). Other pages:
+  // original campaign-based match.
+  function saleQueuePass(s, set) {
+    if (!set || set.size === 0) return true;
+    if (scope === 'fiber') {
+      const sq = normQ(saleQueueOf(s)).replace(/^fiberop+$/, 'fiberop');
+      return [...set].some(q => normQ(q).replace(/^fiberop+$/, 'fiberop') === sq);
+    }
+    return set.has(s.campaign) || [...set].some(q => (s.campaign || '').startsWith(q.split(' ')[0]));
+  }
+
   function filterCalls(f) {
     return calls.filter(c => inRange(c.date, f) && callInScope(c) && passSet(c.queue, f.queues) && passSet(c.agent, f.agents) && passSet(c.result, f.results));
   }
   function filterSales(f) {
     return sales.filter(s => inRange(s.date, f) && saleInScope(s)
-      && (!f.queues || f.queues.size === 0 || f.queues.has(s.campaign) || [...f.queues].some(q => (s.campaign || '').startsWith(q.split(' ')[0])))
+      && saleQueuePass(s, f.queues)
       && passSet(s.agent, f.agents)
       && passSet(s.team, f.teams)
       && passSet(s.provider, f.providers)
@@ -377,6 +402,6 @@ const DataEngine = (() => {
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
     filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats, dailyHourlyMatrix, dailyReport,
-    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, FIBER_QUEUES, setScope, getScope, isReportCall, isReportSale, ABANDON_EXCLUDE_QUEUES,
+    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, FIBER_QUEUES, FIBER_SALE_QUEUES, isFiberSale, setScope, getScope, isReportCall, isReportSale, ABANDON_EXCLUDE_QUEUES,
   };
 })();
