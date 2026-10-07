@@ -1736,8 +1736,8 @@
 
   const SCOPE_META = {
     all:    { title: 'Overview',           sub: 'All queues' },
-    groups: { title: 'Groups Calls', sub: '' },
-    fiber:  { title: 'Fiber Calls & Sales',              sub: '' },
+    groups: { title: 'Call Center Groups', sub: '' },
+    fiber:  { title: 'Fiber',              sub: '' },
   };
 
   function switchPage(id) {
