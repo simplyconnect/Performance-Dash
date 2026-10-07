@@ -46,7 +46,10 @@ const DataEngine = (() => {
   // Values seen in the sheet: Fiber Op, Fiber 2, Fiber 3, Fiber 4 (Group Call,
   // Non Fiber 1/2, Wireless are NOT fiber). Matching ignores case/spaces and
   // accepts both "Fiber Op" and "Fiber Opp".
-  const FIBER_SALE_QUEUES = ['Fiber 4', 'Fiber 3', 'Fiber Op', 'Fiber Opp', 'Fiber 2'];
+  // Pivot "Fiber Sales on Fiber Ops" counts ONLY the Fiber Op queue, so the
+  // Fiber page sales do the same. To also count other queues, add them here
+  // (e.g. 'Fiber 2', 'Fiber 3', 'Fiber 4').
+  const FIBER_SALE_QUEUES = ['Fiber Op', 'Fiber Opp'];
   const saleQueueOf = s => s.queue || s.callQueue || s.receivedQueue || '';
   function isFiberSale(s) {
     const q = normQ(saleQueueOf(s));
