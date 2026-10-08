@@ -8,31 +8,22 @@ const DataEngine = (() => {
   const DAY = 86400000;
 
   // ---------------- Daily Call Center Report config ----------------
-  // Only these queues ("Call Center" column) count toward the Daily
-  // report. Edit this list any time your groups change.
   const REPORT_QUEUES = [
     'Group 44 Sales', 'Group 48', 'Group 56', 'Group 50 CS', 'Group 42',
     'Group 43', 'Group 41', 'Group 18', 'Group 13 OB CB', 'Group 45 ATT Sales',
     'Group 51', 'Group 54', 'Group 5', 'Group 14 (Spectrum cs call)', 'Group 53',
   ];
-  // Abandoned calls from these queues are NEVER counted as "Missed" — even
-  // though Group 13 OB CB and Group 18 are also in REPORT_QUEUES above
-  // (their calls/answered/sales still count, only their abandons don't).
+  // Abandoned calls from these queues are NEVER counted as "Missed".
   const ABANDON_EXCLUDE_QUEUES = ['Group 10 FB $99', 'Group 13 OB CB', 'Group 18'];
 
   // ---------------- Page scopes (sidebar buttons) ----------------
-  // 'all'    -> Overview (every queue, original behaviour)
-  // 'groups' -> "Call Center Groups" page (REPORT_QUEUES above)
-  // 'fiber'  -> "Fiber" page (queues below). Names are matched ignoring
-  //             case/spaces, so "Fiber3" / "Fiber 3" both work.
   const FIBER_QUEUES = ['Fiber 4', 'Fiber3', 'Fiber Opp', 'Fiber2'];
   let scope = 'all';
   const normQ = v => String(v == null ? '' : v).toLowerCase().replace(/\s+/g, '');
   function scopeQueues() { return scope === 'fiber' ? FIBER_QUEUES : scope === 'groups' ? REPORT_QUEUES : null; }
   function setScope(name) { scope = (name === 'groups' || name === 'fiber') ? name : 'all'; }
   function getScope() { return scope; }
-  // Fiber page only counts calls whose Talk Time is greater than 0:01:59
-  // (i.e. 2:00 or more). Change FIBER_MIN_TALK_SEC to adjust the cut-off.
+  // Fiber page only counts calls with Talk Time >= 2:00.
   const FIBER_MIN_TALK_SEC = 119;
   function talkOk(c) { return scope !== 'fiber' || (Number(c.talk) || 0) > FIBER_MIN_TALK_SEC; }
   function callInScope(c) {
@@ -40,28 +31,43 @@ const DataEngine = (() => {
     const q = normQ(c.queue);
     return list.some(x => normQ(x) === q) && talkOk(c);
   }
-  function saleInScope(s) {
-    const list = scopeQueues(); if (!list) return true;
-    const camp = normQ(s.campaign);
-    if (!camp) return false;
-    return list.some(x => {
-      const n = normQ(x);
-      if (camp === n) return true;
-      return camp.startsWith(n) && !/[0-9]/.test(camp.charAt(n.length));
-    });
+  // Fiber SALES are identified by "Call Received from Queue Name" (s.queue).
+  const FIBER_SALE_QUEUES = ['Fiber Op', 'Fiber Opp'];
+  const saleQueueOf = s => s.queue || s.callQueue || s.receivedQueue || '';
+  function isFiberSale(s) {
+    const q = normQ(saleQueueOf(s));
+    return !!q && FIBER_SALE_QUEUES.some(x => normQ(x) === q);
   }
-  // Queue is part of the "reported" set for the current page.
+  const FIBER_REQUIRE_LEAD = true;
+  const hasLead = s => String(s.lead == null ? '' : s.lead).trim() !== '';
+
+  // FIX: one shared campaign matcher. Exact match, or campaign starts with
+  // the queue name and is NOT followed by another digit
+  // ("Group 5" matches "Group 5 xyz" but not "Group 50 CS").
+  // Before, some places compared only the first word ("Group"), so every
+  // campaign starting with "Group" matched every queue.
+  function campMatches(camp, name) {
+    const c = normQ(camp), n = normQ(name);
+    if (!c || !n) return false;
+    if (c === n) return true;
+    return c.startsWith(n) && !/[0-9]/.test(c.charAt(n.length));
+  }
+  function saleInScope(s) {
+    if (scope === 'fiber') return isFiberSale(s) && (!FIBER_REQUIRE_LEAD || hasLead(s));
+    const list = scopeQueues(); if (!list) return true;
+    return list.some(x => campMatches(s.campaign, x));
+  }
   function inReportScope(queue) {
     return scope === 'fiber' ? FIBER_QUEUES.some(x => normQ(x) === normQ(queue)) : REPORT_QUEUES.includes(queue);
   }
   function saleInReportScope(s) {
     if (scope !== 'all') return saleInScope(s);
-    return REPORT_QUEUES.includes(s.campaign) || REPORT_QUEUES.some(g => (s.campaign || '').startsWith(g.split(' ')[0]));
+    return REPORT_QUEUES.some(g => campMatches(s.campaign, g)); // FIX
   }
 
-  let raw = null;      // parsed payload
-  let calls = [];      // expanded call rows
-  let sales = [];       // expanded sale rows
+  let raw = null;
+  let calls = [];
+  let sales = [];
   let bounds = { min: null, max: null };
 
   function dateFromNum(d) { return new Date(EPOCH + d * DAY); }
@@ -72,18 +78,9 @@ const DataEngine = (() => {
   function fmtDateFull(dt) {
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   }
-  function dow(dt) { return dt.getUTCDay(); } // 0 Sun..6 Sat
+  function dow(dt) { return dt.getUTCDay(); }
   const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // Apps Script Web App URLs (script.google.com/.../exec) are served through
-  // a shared script.googleusercontent.com "echo" layer that can — especially
-  // right after a fresh deploy, or under concurrent/rapid requests — return
-  // a transient 404, or occasionally hand back a stale cached response
-  // instead of the latest sheet data. Two things fix both symptoms:
-  //   1. A unique cache-busting query param on every request, so neither the
-  //      browser nor any edge layer can serve back an old response.
-  //   2. A few retries with backoff before we give up — a 404 here is very
-  //      often gone if you just ask again a second later.
   const LAST_GOOD_KEY = 'sc_last_good_feed';
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -91,10 +88,6 @@ const DataEngine = (() => {
     let lastErr;
     for (let i = 0; i < attempts; i++) {
       try {
-        // nocache=1 tells Code.gs's doGet() to skip its own 2-minute
-        // CacheService read and pull straight from the sheet — without this,
-        // Apps Script can hand back the same response for up to 120s no
-        // matter how many times (or how hard) the frontend re-requests it.
         const bust = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now() + (forceFresh ? '&nocache=1' : '');
         const res = await fetch(bust, { cache: 'no-store' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -103,7 +96,7 @@ const DataEngine = (() => {
         return json;
       } catch (err) {
         lastErr = err;
-        if (i < attempts - 1) await sleep(600 * (i + 1)); // 600ms, then 1200ms
+        if (i < attempts - 1) await sleep(600 * (i + 1));
       }
     }
     throw lastErr;
@@ -111,12 +104,10 @@ const DataEngine = (() => {
 
   async function load(url, forceFresh = false) {
     const json = await fetchJson(url, 3, forceFresh);
-    try { localStorage.setItem(LAST_GOOD_KEY, JSON.stringify({ json, savedAt: Date.now() })); } catch (e) { /* storage full/unavailable — ignore */ }
+    try { localStorage.setItem(LAST_GOOD_KEY, JSON.stringify({ json, savedAt: Date.now() })); } catch (e) { /* ignore */ }
     return ingest(json);
   }
 
-  // Fallback used by app.js when a live fetch fails after retries — lets the
-  // dashboard keep showing the last successful pull instead of going blank.
   function loadLastGood() {
     try {
       const cached = JSON.parse(localStorage.getItem(LAST_GOOD_KEY) || 'null');
@@ -139,13 +130,17 @@ const DataEngine = (() => {
         wait: r[5], talk: r[6], hold: r[7], wrap: r[8], bounces: r[9],
       };
     });
-    sales = (json.sales.rows || []).map(r => {
+    sales = ((json.sales && json.sales.rows) || []).map(r => {
       const dt = dateFromNum(r.d);
       return Object.assign({}, r, { date: dt, dateStr: fmtDate(dt), dow: dow(dt) });
     });
-    const allDates = calls.map(c => c.date.getTime()).concat(sales.map(s => s.date.getTime()));
-    bounds.min = allDates.length ? new Date(Math.min(...allDates)) : new Date();
-    bounds.max = allDates.length ? new Date(Math.max(...allDates)) : new Date();
+    // FIX: Math.min(...bigArray) throws "Maximum call stack size exceeded"
+    // on large feeds. Use a plain loop instead.
+    let lo = Infinity, hi = -Infinity;
+    const track = r => { const t = r.date.getTime(); if (t < lo) lo = t; if (t > hi) hi = t; };
+    calls.forEach(track); sales.forEach(track);
+    bounds.min = lo === Infinity ? new Date() : new Date(lo);
+    bounds.max = hi === -Infinity ? new Date() : new Date(hi);
     return { meta: json.meta, generatedAt: json.generatedAt, source: json.source, bounds };
   }
 
@@ -156,18 +151,24 @@ const DataEngine = (() => {
   function distinctProviders() { return Array.from(new Set(sales.map(s => s.provider).filter(Boolean))).sort(); }
   function distinctServices() { return Array.from(new Set(sales.map(s => s.services).filter(Boolean))).sort(); }
 
-  // filters: { start, end (Date, inclusive, UTC midnight),
-  //   queues/agents/results:Set|null (apply to calls),
-  //   teams/providers/services:Set|null (apply to sales only — calls rows don't carry these fields) }
   function inRange(dt, f) { const t = dt.getTime(); return t >= f.start.getTime() && t <= f.end.getTime(); }
   function passSet(v, set) { return !set || set.size === 0 || set.has(v); }
+
+  function saleQueuePass(s, set) {
+    if (!set || set.size === 0) return true;
+    if (scope === 'fiber') {
+      const sq = normQ(saleQueueOf(s)).replace(/^fiberop+$/, 'fiberop');
+      return [...set].some(q => normQ(q).replace(/^fiberop+$/, 'fiberop') === sq);
+    }
+    return set.has(s.campaign) || [...set].some(q => campMatches(s.campaign, q)); // FIX
+  }
 
   function filterCalls(f) {
     return calls.filter(c => inRange(c.date, f) && callInScope(c) && passSet(c.queue, f.queues) && passSet(c.agent, f.agents) && passSet(c.result, f.results));
   }
   function filterSales(f) {
     return sales.filter(s => inRange(s.date, f) && saleInScope(s)
-      && (!f.queues || f.queues.size === 0 || f.queues.has(s.campaign) || [...f.queues].some(q => (s.campaign || '').startsWith(q.split(' ')[0])))
+      && saleQueuePass(s, f.queues)
       && passSet(s.agent, f.agents)
       && passSet(s.team, f.teams)
       && passSet(s.provider, f.providers)
@@ -181,21 +182,7 @@ const DataEngine = (() => {
     return Object.assign({}, f, { start, end });
   }
 
-  // ---------------- Hourly breakdown (calls + sales, 0-23 = the hour value
-  // already parsed out of the sheet's "Time Frame" / "Timestamp" columns) ----
-  // "Missed" = Call Result === 'Abandoned' only (not every non-Answered
-  // result — Overflow/Stranded/Escaped/Transferred are neither). "Answered"
-  // = Call Result === 'Answered'. Both counts (and the two percentages
-  // below) are restricted to REPORT_QUEUES — the same call-center queue
-  // group used by the Daily Call Center Report — and Abandoned calls from
-  // ABANDON_EXCLUDE_QUEUES never count as Missed. This keeps the Hourly
-  // page and the Daily × Hourly Breakdown in sync with that report instead
-  // of counting every queue.
-  // answerRate / missedPct are both out of the *decided* calls only
-  // (Answered + Missed — calls still ringing/transferred/etc. are excluded
-  // from the denominator), so the two always add up to 100%:
-  //   answerRate = Answered / (Answered + Missed) × 100
-  //   missedPct  = Missed   / (Answered + Missed) × 100
+  // ---------------- Hourly breakdown ----------------
   function classifyCall(b, c) {
     if (!inReportScope(c.queue)) return;
     b.calls++;
@@ -229,18 +216,17 @@ const DataEngine = (() => {
     return buckets;
   }
 
-  // "Today", independent of anything picked in the top filter bar — the
-  // real calendar date, so this always rolls forward on its own at
-  // midnight. Calls use the same criteria as the Daily Call Center Report
-  // (REPORT_QUEUES only, Missed never counts ABANDON_EXCLUDE_QUEUES).
-  // Sales are every sale logged today — no queue restriction, since that
-  // side of the sheet was already correct.
-  function todayDateStr() { return new Date().toISOString().slice(0, 10); }
-  function yesterdayDateStr() {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
+  // FIX: "today"/"yesterday" were mixing UTC (toISOString) with the browser's
+  // local date (setDate), so around midnight — and always for a browser in a
+  // different timezone — the two could disagree or be a day off. Sheet hours
+  // are Central Time, so both now use the same Central calendar date.
+  // Change REPORT_TZ if your sheet uses a different timezone.
+  const REPORT_TZ = 'America/Chicago';
+  function dateStrInTz(ms) {
+    return new Date(ms).toLocaleDateString('en-CA', { timeZone: REPORT_TZ }); // YYYY-MM-DD
   }
+  function todayDateStr() { return dateStrInTz(Date.now()); }
+  function yesterdayDateStr() { return dateStrInTz(Date.now() - DAY); }
 
   function todayHourlyStats(dateStr) {
     const day = dateStr || todayDateStr();
@@ -264,13 +250,9 @@ const DataEngine = (() => {
     return { dateStr: day, buckets };
   }
 
-  // ---------------- Daily x Hourly matrix (one row-group per calendar date,
-  // one column per hour) — powers the "Sales / Answered / Missed / Missed %"
-  // breakdown table. Dates come from the calls' own date field, hours are
-  // the same raw 0-23 (Central Time) bucket used everywhere else, so this
-  // stays in sync with the single-range Hourly page and the KPI cards. ----
+  // ---------------- Daily x Hourly matrix ----------------
   function dailyHourlyMatrix(filteredCalls, filteredSales) {
-    const days = new Map(); // dateStr -> { dateStr, date, buckets[24] }
+    const days = new Map();
     function ensureDay(dateStr, date) {
       let d = days.get(dateStr);
       if (!d) {
@@ -305,34 +287,24 @@ const DataEngine = (() => {
     return rows;
   }
 
+  // FIX: the old `if (!prev) return null;` ran first, so the next line
+  // (prev === 0 -> cur === 0 ? 0 : null) could never execute and 0 -> 0
+  // showed "no data" instead of 0%.
   function pctDelta(cur, prev) {
-    if (!prev) return null;
-    if (prev === 0) return cur === 0 ? 0 : null;
+    if (prev === 0 || prev == null) return cur === 0 ? 0 : null;
     return ((cur - prev) / prev) * 100;
   }
 
-  // Shared "is this row in the reported call centers?" checks (used by the
-  // Weekly Compare so it only covers REPORT_QUEUES, like the Daily report).
-  // Abandoned calls from ABANDON_EXCLUDE_QUEUES (Group 13 OB CB, Group 18) are dropped
-  // entirely, same as the Daily report never counting them as Missed.
   const isReportCall = c => inReportScope(c.queue)
     && !(c.result === 'Abandoned' && ABANDON_EXCLUDE_QUEUES.includes(c.queue));
   const isReportSale = s => saleInReportScope(s);
 
   // ---------------- Daily Call Center Report ----------------
-  // One row-group per calendar date, restricted to REPORT_QUEUES only.
-  // Missed (Abandoned) never counts calls from ABANDON_EXCLUDE_QUEUES,
-  // whether or not that queue is itself part of REPORT_QUEUES.
-  // "Total Calls" = Answered + Missed only (matches the sheet's "# of
-  // Calls" column) — NOT every call in the queue, since some results
-  // (Overflow/Transferred/etc.) are neither answered nor missed.
-  // Sales are also broken down by Provider (one sub-row per provider that
-  // had a sale that day) since calls have no provider of their own.
   function dailyReport(filteredCalls, filteredSales) {
     const inReport = c => inReportScope(c.queue);
     const salesInReport = s => saleInReportScope(s);
 
-    const days = new Map(); // dateStr -> row
+    const days = new Map();
     function ensureDay(dateStr, date) {
       let d = days.get(dateStr);
       if (!d) { d = { dateStr, date, calls: 0, answered: 0, missed: 0, providers: new Map() }; days.set(dateStr, d); }
@@ -377,6 +349,6 @@ const DataEngine = (() => {
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
     filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats, dailyHourlyMatrix, dailyReport,
-    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, FIBER_QUEUES, setScope, getScope, isReportCall, isReportSale, ABANDON_EXCLUDE_QUEUES,
+    todayDateStr, yesterdayDateStr, todayHourlyStats, REPORT_QUEUES, FIBER_QUEUES, FIBER_SALE_QUEUES, isFiberSale, setScope, getScope, isReportCall, isReportSale, ABANDON_EXCLUDE_QUEUES,
   };
 })();
