@@ -622,7 +622,7 @@
   function renderSalesTable(sales) {
     let rows = sales.slice();
     const search = state.tableSearch.sales.toLowerCase();
-    if (search) rows = rows.filter(r => [r.agent, r.closer, r.lead, r.provider, r.team, r.state, r.campaign, r.queue].filter(Boolean).join(' ').toLowerCase().includes(search));
+    if (search) rows = rows.filter(r => [r.agent, r.closer, r.lead, r.provider, r.team, r.state, r.campaign].filter(Boolean).join(' ').toLowerCase().includes(search));
     const { key, dir } = state.tableSort.sales;
     rows.sort((a, b) => {
       const av = a[key], bv = b[key];
@@ -1723,10 +1723,6 @@
     const railClosers = $('#rail_closerperf');
     if (railClosers) railClosers.addEventListener('click', () => switchPage('closerperf'));
 
-    // Master Reports tab (pivot tabs from the spreadsheet)
-    const railReports = $('#rail_reports');
-    if (railReports) railReports.addEventListener('click', () => switchPage('reports'));
-
     // Lead Gen Performance tab
     const railLeads = $('#rail_leadperf');
     if (railLeads) railLeads.addEventListener('click', () => switchPage('leadperf'));
@@ -1754,14 +1750,8 @@
     setHidden('#top', !(id === 'overview' || scope !== 'all'));
     setHidden('#page-closers', id !== 'closerperf');
     setHidden('#page-leads', id !== 'leadperf');
-    setHidden('#page-reports', id !== 'reports');
-    setHidden('.filters', id === 'reports'); // calls/sales filters don't apply to the pivot-tab reports
     $$('.rail__btn[data-goto], .rail__btn[data-page]').forEach(b => b.removeAttribute('aria-current'));
-    if (id === 'reports') {
-      setCurrent('#rail_reports');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      if (window.ReportsPage) window.ReportsPage.show();
-    } else if (id === 'closerperf') {
+    if (id === 'closerperf') {
       setCurrent('#rail_closerperf');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (id === 'leadperf') {
