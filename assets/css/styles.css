@@ -690,3 +690,46 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
   .wc__select{min-width:0; flex:1}
 }
 @media print{.wc{position:static; background:none} .wc__panel{box-shadow:none; border:0}}
+
+/* =========================================================
+   Master Reports page
+   ========================================================= */
+.rp-note{padding:14px 16px; border-radius:var(--r-md); background:var(--surface-2); color:var(--text-2); font-size:13.5px}
+.rp-note--warn{background:var(--rose-soft); color:var(--chip-dn-tx)}
+.rp-meta{font-size:12.5px; color:var(--muted)}
+.rp-tabs{display:flex; flex-wrap:wrap; gap:8px}
+.rp-tab{height:34px; padding:0 14px; border-radius:999px; background:var(--surface-3); color:var(--text-2); font-weight:600; font-size:12.5px; transition:background .15s,color .15s}
+.rp-tab:hover{background:var(--amber-soft); color:var(--amber-ink)}
+.rp-tab.is-on{background:var(--amber); color:#1B1712}
+.rp-tab.is-missing{opacity:.5; text-decoration:line-through}
+.rp-kpis .kpi__label{font-size:13px; color:var(--text-2)}
+.rp-kpis .kpi__val{font-size:30px; font-weight:800; letter-spacing:-.02em}
+.rp-sub{font-size:12px; color:var(--muted); margin:2px 0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rp-h{margin:0; font-size:15px}
+.rp-grid{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:16px}
+.rp-bar{display:grid; grid-template-columns:minmax(80px,150px) 1fr 52px; align-items:center; gap:10px; margin:7px 0; font-size:12.5px}
+.rp-bar__l{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rp-bar__t{height:10px; border-radius:99px; background:var(--surface-3); overflow:hidden}
+.rp-bar__t i{display:block; height:100%; border-radius:99px; background:var(--amber)}
+.rp-bar b{text-align:right}
+.rp-trend{display:flex; align-items:flex-end; gap:6px; height:190px; padding-top:18px; overflow-x:auto}
+.rp-col{flex:1 0 34px; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:4px; min-width:34px}
+.rp-col b{font-size:10.5px}
+.rp-col i{display:block; width:100%; max-width:34px; border-radius:6px 6px 2px 2px; background:var(--violet); opacity:.85}
+.rp-col span{font-size:10px; color:var(--muted); max-width:56px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.rp-wrap{overflow:auto; max-height:70vh}
+.rp-table{border-collapse:separate; border-spacing:0; width:100%; font-size:12.5px}
+.rp-table th, .rp-table td{padding:7px 10px; border-bottom:1px solid var(--line); white-space:nowrap}
+.rp-table thead th{position:sticky; top:0; z-index:2; background:var(--surface-3); cursor:pointer; user-select:none; font-weight:700}
+.rp-table th.is-num, .rp-table td.is-num{text-align:right; font-variant-numeric:tabular-nums}
+.rp-table td.is-label, .rp-table th.is-label{position:sticky; left:0; z-index:1; background:var(--surface); font-weight:600; text-align:left}
+.rp-table thead th.is-label{z-index:3; background:var(--surface-3)}
+.rp-table td.is-total{font-weight:800}
+.rp-table tfoot td{position:sticky; bottom:0; background:var(--amber-soft); color:var(--amber-ink); font-weight:800; border-top:2px solid var(--amber)}
+@media (max-width:900px){ .rp-grid{grid-template-columns:1fr} .rp-bar{grid-template-columns:90px 1fr 46px} }
+
+/* Master Reports – dashboard-style tweaks */
+.rp-table td.rp-tot{font-weight:800}
+.rp-table tfoot td{position:sticky; bottom:0; background:var(--amber-soft); color:var(--amber-ink); font-weight:800; border-top:2px solid var(--amber); padding:10px 14px}
+#page-reports .filters{margin:0}
+#page-reports .kpis{margin-top:0}
