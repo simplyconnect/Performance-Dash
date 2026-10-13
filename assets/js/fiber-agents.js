@@ -104,14 +104,14 @@ window.FiberAgents = (() => {
     const totalSales = rows.reduce((a, r) => a + r.sales, 0);
     const sellers = rows.filter(r => r.sales > 0).length;
     const t = (label, value, hint) => `<div class="tile"><div class="tile__label">${label}</div><div class="tile__value fa-tile__v">${value}</div><div class="tile__hint">${hint}</div></div>`;
-    return t('Active agents', int(active.length), `${int(sellers)} ne sale ki`)
+    return t('Active agents', int(active.length), `${int(sellers)} agents ne Fiber sale ki`)
       + t('Top seller', top && top.sales ? esc(top.agent) : '—', top && top.sales ? `${int(top.sales)} sales · ${int(top.rgu)} RGUs` : 'No sales')
       + t('Best conversion', elig ? esc(elig.agent) : '—', elig ? `${pct(elig.conv)} · min ${MIN_CALLS_FOR_CONV} calls` : `min ${MIN_CALLS_FOR_CONV} calls chahiye`)
       + t('Avg sales / seller', sellers ? (totalSales / sellers).toFixed(1) : '0', topCalls && topCalls.calls ? `Most calls: ${esc(topCalls.agent)} (${int(topCalls.calls)})` : '');
   }
 
   // ---------------- Scorecard ----------------
-  const COLS = [
+  const ALL_COLS = [
     { key: 'rank', label: '#', sortable: false, cls: 'rank' },
     { key: 'agent', label: 'Agent', cls: 'grow' },
     { key: 'q0', label: 'Fiber 4', cls: 'r', sortable: false },
@@ -128,6 +128,9 @@ window.FiberAgents = (() => {
     { key: 'activeDays', label: 'Active Days', cls: 'r' },
     { key: 'trend', label: 'Sales Trend', sortable: false },
   ];
+
+  const hasPts = () => last.sales.some(x => x.total || x.rgu);
+  const cols = () => hasPts() ? ALL_COLS : ALL_COLS.filter(c => c.key !== 'rgu' && c.key !== 'points');
 
   function sortRows(rows) {
     const { key, dir } = ui.sort;
@@ -156,7 +159,7 @@ window.FiberAgents = (() => {
     const maxCalls = Math.max(...list.map(r => r.calls), 1);
     const maxSales = Math.max(...list.map(r => r.sales), 1);
 
-    const head = COLS.map(c => `<th data-key="${c.key}" class="${c.sortable === false ? '' : 'sortable'} ${c.cls || ''}" ${ui.sort.key === c.key ? `data-dir="${ui.sort.dir}"` : ''}>${c.label}</th>`).join('');
+    const head = cols().map(c => `<th data-key="${c.key}" class="${c.sortable === false ? '' : 'sortable'} ${c.cls || ''}" ${ui.sort.key === c.key ? `data-dir="${ui.sort.dir}"` : ''}>${c.label}</th>`).join('');
     const body = pageRows.map((r, i) => `<tr>
       <td class="rank">${medal(start + i)}</td>
       <td class="grow"><span class="agentcell"><span class="agentava" style="background:${avaColor(r.agent)}">${esc(initials(r.agent))}</span><span><b class="fa-name">${esc(r.agent)}</b><small class="fa-sub">${int(r.callsPerDay)} calls/day</small></span></span></td>
@@ -166,8 +169,7 @@ window.FiberAgents = (() => {
       <td class="r">${r.calls ? mmss(r.aht) : '–'}</td>
       <td class="r"><span class="fa-bar fa-bar--g"><i style="width:${r.sales ? Math.max(3, r.sales / maxSales * 100) : 0}%"></i><b>${int(r.sales)}</b></span></td>
       <td class="r">${convPill(r)}</td>
-      <td class="r">${int(r.rgu)}</td>
-      <td class="r">${int(r.points)}</td>
+      ${hasPts() ? `<td class="r">${int(r.rgu)}</td><td class="r">${int(r.points)}</td>` : ''}
       <td class="r">${int(r.activeDays)}</td>
       <td>${sparkline(r, dates)}</td>
     </tr>`).join('');
@@ -178,8 +180,7 @@ window.FiberAgents = (() => {
       <td class="r"><b>${totals.calls ? mmss((totals.talk + totals.hold + totals.wrap) / totals.calls) : '–'}</b></td>
       <td class="r"><b>${int(totals.sales)}</b></td>
       <td class="r"><b>${totals.calls ? pct(totals.sales / totals.calls * 100) : '–'}</b></td>
-      <td class="r"><b>${int(totals.rgu)}</b></td>
-      <td class="r"><b>${int(totals.points)}</b></td><td></td><td></td></tr>`;
+      ${hasPts() ? `<td class="r"><b>${int(totals.rgu)}</b></td><td class="r"><b>${int(totals.points)}</b></td>` : ''}<td></td><td></td></tr>`;
     wrap.innerHTML = `<table class="tbl fa-tbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
     $('#fa_count').textContent = `${int(list.length)} agent${list.length === 1 ? '' : 's'}`;
     $('#fa_pager').innerHTML = pages > 1
@@ -212,11 +213,46 @@ window.FiberAgents = (() => {
     $('#fa_count').textContent = `${int(list.length)} agent${list.length === 1 ? '' : 's'} · ${int(dates.length)} days`;
   }
 
+
+  // ---------------- Charts (inline SVG, no library) ----------------
+  function barsChart(dates, vals, color) {
+    const W = 560, H = 190, L = 34, B = 24, T = 10, R = 8;
+    const max = Math.max(...vals, 1), n = vals.length || 1;
+    const bw = (W - L - R) / n, gap = Math.min(4, bw * 0.25);
+    const y = v => T + (H - T - B) * (1 - v / max);
+    let g = '';
+    [0, .5, 1].forEach(t => { const yy = T + (H - T - B) * (1 - t); g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)"/><text x="${L - 6}" y="${yy + 3}" text-anchor="end" font-size="10" fill="var(--muted)">${int(max * t)}</text>`; });
+    const every = Math.ceil(n / 10);
+    const bars = vals.map((v, i) => `<rect x="${(L + i * bw + gap / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${Math.max(2, bw - gap).toFixed(1)}" height="${Math.max(0, H - B - y(v)).toFixed(1)}" rx="3" fill="${color}"><title>${dates[i]}: ${int(v)}</title></rect>`
+      + (i % every === 0 ? `<text x="${(L + i * bw + bw / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--muted)">${dates[i].slice(5)}</text>` : '')).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" class="fa-svg" role="img">${g}${bars}</svg>`;
+  }
+  function hbars(items, color) {
+    if (!items.length) return '<div class="mut" style="padding:14px 0">Data nahi</div>';
+    const max = Math.max(...items.map(i => i.v), 1);
+    return `<div class="fa-hb">${items.map(i => `<div class="fa-hb__row"><span class="fa-hb__l" title="${esc(i.l)}">${esc(i.l)}</span><span class="fa-hb__t"><i style="width:${Math.max(2, i.v / max * 100)}%;background:${color}"></i></span><b>${int(i.v)}</b></div>`).join('')}</div>`;
+  }
+  function charts(calls, sales, rows) {
+    const dset = new Set(); calls.forEach(c => dset.add(c.dateStr)); sales.forEach(x => dset.add(x.dateStr));
+    const dates = Array.from(dset).sort();
+    const sByD = new Map(), cByD = new Map();
+    sales.forEach(x => sByD.set(x.dateStr, (sByD.get(x.dateStr) || 0) + 1));
+    calls.forEach(c => cByD.set(c.dateStr, (cByD.get(c.dateStr) || 0) + 1));
+    const top = [...rows].filter(r => r.sales).sort((a, b) => b.sales - a.sales).slice(0, 10).map(r => ({ l: r.agent, v: r.sales }));
+    const qs = QUEUES.map((q, i) => ({ l: q, v: rows.reduce((a, r) => a + r.q[i], 0) }));
+    const card = (t, sub, body) => `<div class="fa-chart"><div class="fa-chart__t">${t}</div><div class="fa-chart__s">${sub}</div>${body}</div>`;
+    if (!dates.length) return '';
+    return card('Daily Fiber Sales', '"Fiber sales" tab ke mutabiq', barsChart(dates, dates.map(d => sByD.get(d) || 0), 'var(--green)'))
+      + card('Daily Fiber Calls', 'Talk time > 1:59, 4 Fiber queues', barsChart(dates, dates.map(d => cByD.get(d) || 0), 'var(--violet)'))
+      + card('Top 10 Fiber Sellers', 'Is range mein sabse zyada sales', hbars(top, 'var(--green)'))
+      + card('Calls by Fiber Queue', QUEUES.join(' · '), hbars(qs, 'var(--violet)'));
+  }
+
   // ---------------- CSV ----------------
   function exportCsv() {
     const { rows } = build(last.calls, last.sales);
     sortRows(rows);
-    const head = ['Agent', ...QUEUES, 'Total Calls', 'Avg Talk (s)', 'AHT (s)', 'Sales', 'Sales %', 'RGUs', 'Points', 'Active Days'];
+    const head = ['Agent', ...QUEUES, 'Total Calls', 'Avg Talk (s)', 'AHT (s)', 'Fiber Sales', 'Sales %', 'RGUs', 'Points', 'Active Days'];
     const q = v => '"' + String(v).replace(/"/g, '""') + '"';
     const lines = [head.map(q).join(',')].concat(rows.map(r => [r.agent, ...r.q, r.calls, Math.round(r.avgTalk), Math.round(r.aht), r.sales, r.conv.toFixed(2), r.rgu, r.points, r.activeDays].map(q).join(',')));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -242,6 +278,7 @@ window.FiberAgents = (() => {
   function draw() {
     const { rows, dates } = build(last.calls, last.sales);
     $('#fa_tiles').innerHTML = tiles(rows);
+    $('#fa_charts').innerHTML = charts(last.calls, last.sales, rows);
     if (ui.view === 'matrix') renderMatrix(rows, dates); else renderScore(rows, dates);
   }
 
