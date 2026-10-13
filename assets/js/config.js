@@ -7,5 +7,5 @@
    Where to get the URL: apps-script/README.md, step 4.
    ========================================================= */
 window.SC_CONFIG = {
-  feedUrl: 'https://script.google.com/macros/s/AKfycbzLdIVOop0fXQtn5pZykGJ41rrfBal6paC4NgAJ6ROPFS4QvEpouzxHwvHtU3xcw-1NzQ/exec'
+  feedUrl: 'https://script.google.com/macros/s/AKfycbyb9Yg4ClNoh8ynbsyrac_4MCS2dyP-WumhO2fxl-sCnhVerM3z18XF3E42Q3_Vd3oOXQ/exec'
 };
