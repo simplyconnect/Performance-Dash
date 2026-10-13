@@ -35,6 +35,9 @@ const DataEngine = (() => {
   const FIBER_SALE_QUEUES = ['Fiber Op', 'Fiber Opp'];
   const saleQueueOf = s => s.queue || s.callQueue || s.receivedQueue || '';
   function isFiberSale(s) {
+    // Code.gs ab har sale par s.fiber (true/false) bhejta hai — "sales Data" tab ke
+    // FIBER_SALE_COL / FIBER_SALE_VALUES setting ke hisaab se. Wahi final hai.
+    if (typeof s.fiber === 'boolean') return s.fiber;
     const q = normQ(saleQueueOf(s));
     return !!q && FIBER_SALE_QUEUES.some(x => normQ(x) === q);
   }
@@ -53,7 +56,7 @@ const DataEngine = (() => {
     return c.startsWith(n) && !/[0-9]/.test(c.charAt(n.length));
   }
   function saleInScope(s) {
-    if (scope === 'fiber') return isFiberSale(s) && (!FIBER_REQUIRE_LEAD || hasLead(s));
+    if (scope === 'fiber') return isFiberSale(s) && (typeof s.fiber === 'boolean' || !FIBER_REQUIRE_LEAD || hasLead(s));
     const list = scopeQueues(); if (!list) return true;
     return list.some(x => campMatches(s.campaign, x));
   }
@@ -157,6 +160,7 @@ const DataEngine = (() => {
   function saleQueuePass(s, set) {
     if (!set || set.size === 0) return true;
     if (scope === 'fiber') {
+      if (typeof s.fiber === 'boolean') return false; // fiber sales mein queue nahi hoti: queue filter lage to koi sale match nahi
       const sq = normQ(saleQueueOf(s)).replace(/^fiberop+$/, 'fiberop');
       return [...set].some(q => normQ(q).replace(/^fiberop+$/, 'fiberop') === sq);
     }
