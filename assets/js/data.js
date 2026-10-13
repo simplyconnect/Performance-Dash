@@ -71,6 +71,9 @@ const DataEngine = (() => {
   let raw = null;
   let calls = [];
   let sales = [];
+  // "Fiber sales" tab (pivot: Agent x Date) se aayi sales — Fiber page ki asli sales yahi hain.
+  let fiberSales = [];
+  let fiberPivot = false;
   let bounds = { min: null, max: null };
 
   function dateFromNum(d) { return new Date(EPOCH + d * DAY); }
@@ -137,18 +140,35 @@ const DataEngine = (() => {
       const dt = dateFromNum(r.d);
       return Object.assign({}, r, { date: dt, dateStr: fmtDate(dt), dow: dow(dt) });
     });
+    // ---- Fiber sales: "Fiber sales" tab ke pivot se (Code.gs -> json.fiberSales) ----
+    const fs = json.fiberSales;
+    fiberPivot = !!(fs && fs.found);
+    fiberSales = [];
+    if (fiberPivot) {
+      const teamOf = {};
+      sales.forEach(x => { if (x.agent && x.team) teamOf[normName(x.agent)] = x.team; });
+      (fs.rows || []).forEach(r => {
+        const dt = dateFromNum(r[1]);
+        const n = Math.max(0, Math.round(Number(r[2]) || 0));
+        for (let i = 0; i < n; i++) {
+          fiberSales.push({ agent: r[0], d: r[1], date: dt, dateStr: fmtDate(dt), dow: dow(dt),
+            team: teamOf[normName(r[0])] || null, provider: null, services: 'Fiber',
+            fiber: true, pivot: true, rgu: 0, total: 0 });
+        }
+      });
+    }
     // FIX: Math.min(...bigArray) throws "Maximum call stack size exceeded"
     // on large feeds. Use a plain loop instead.
     let lo = Infinity, hi = -Infinity;
     const track = r => { const t = r.date.getTime(); if (t < lo) lo = t; if (t > hi) hi = t; };
-    calls.forEach(track); sales.forEach(track);
+    calls.forEach(track); sales.forEach(track); fiberSales.forEach(track);
     bounds.min = lo === Infinity ? new Date() : new Date(lo);
     bounds.max = hi === -Infinity ? new Date() : new Date(hi);
     return { meta: json.meta, generatedAt: json.generatedAt, source: json.source, bounds };
   }
 
   function distinctQueues() { return Array.from(new Set(calls.filter(callInScope).map(c => c.queue))).sort(); }
-  function distinctAgents() { return Array.from(new Set(calls.map(c => c.agent).filter(Boolean))).sort(); }
+  function distinctAgents() { return Array.from(new Set(calls.map(c => c.agent).concat(fiberPivot ? fiberSales.map(x => x.agent) : []).filter(Boolean))).sort(); }
   function distinctResults() { return Array.from(new Set(calls.map(c => c.result))).sort(); }
   function distinctTeams() { return Array.from(new Set(sales.map(s => s.team).filter(Boolean))).sort(); }
   function distinctProviders() { return Array.from(new Set(sales.map(s => s.provider).filter(Boolean))).sort(); }
@@ -170,8 +190,10 @@ const DataEngine = (() => {
   function filterCalls(f) {
     return calls.filter(c => inRange(c.date, f) && callInScope(c) && passSet(c.queue, f.queues) && passSet(c.agent, f.agents) && passSet(c.result, f.results));
   }
+  const normName = v => String(v == null ? '' : v).toLowerCase().replace(/\s+/g, ' ').trim();
   function filterSales(f) {
-    return sales.filter(s => inRange(s.date, f) && saleInScope(s)
+    const base = (scope === 'fiber' && fiberPivot) ? fiberSales : sales;
+    return base.filter(s => inRange(s.date, f) && (s.pivot || saleInScope(s))
       && saleQueuePass(s, f.queues)
       && passSet(s.agent, f.agents)
       && passSet(s.team, f.teams)
@@ -349,7 +371,7 @@ const DataEngine = (() => {
 
   return {
     load, loadLastGood, ingest, dateFromNum, fmtDate, fmtDateShort, fmtDateFull, dow, DOW_LABELS, DAY,
-    get calls() { return calls; }, get sales() { return sales; }, get bounds() { return bounds; },
+    get calls() { return calls; }, get sales() { return sales; }, get fiberSales() { return fiberSales; }, get hasFiberPivot() { return fiberPivot; }, get bounds() { return bounds; },
     get meta() { return raw && raw.meta; }, get generatedAt() { return raw && raw.generatedAt; }, get source() { return raw && raw.source; },
     distinctQueues, distinctAgents, distinctResults, distinctTeams, distinctProviders, distinctServices,
     filterCalls, filterSales, prevPeriod, pctDelta, hourlyStats, dailyHourlyMatrix, dailyReport,
