@@ -23,7 +23,7 @@ const DataEngine = (() => {
   function scopeQueues() { return scope === 'fiber' ? FIBER_QUEUES : scope === 'groups' ? REPORT_QUEUES : null; }
   function setScope(name) { scope = (name === 'groups' || name === 'fiber') ? name : 'all'; }
   function getScope() { return scope; }
-  // Fiber page only counts calls with Talk Time >= 2:00.
+  // Fiber page only counts calls with Talk Time > 0:01:59 (i.e. 2:00 or more).
   const FIBER_MIN_TALK_SEC = 119;
   function talkOk(c) { return scope !== 'fiber' || (Number(c.talk) || 0) > FIBER_MIN_TALK_SEC; }
   function callInScope(c) {
@@ -210,7 +210,7 @@ const DataEngine = (() => {
 
   // ---------------- Hourly breakdown ----------------
   function classifyCall(b, c) {
-    if (!inReportScope(c.queue)) return;
+    if (!inReportScope(c.queue) || !talkOk(c)) return;
     b.calls++;
     if (c.result === 'Answered') b.answered++;
     else if (c.result === 'Abandoned' && !ABANDON_EXCLUDE_QUEUES.includes(c.queue)) b.missed++;
@@ -321,7 +321,7 @@ const DataEngine = (() => {
     return ((cur - prev) / prev) * 100;
   }
 
-  const isReportCall = c => inReportScope(c.queue)
+  const isReportCall = c => inReportScope(c.queue) && talkOk(c)
     && !(c.result === 'Abandoned' && ABANDON_EXCLUDE_QUEUES.includes(c.queue));
   const isReportSale = s => saleInReportScope(s);
 
