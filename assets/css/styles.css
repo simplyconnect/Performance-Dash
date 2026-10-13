@@ -726,3 +726,17 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
 .fa-matrix .fa-tcol{position:sticky; right:0; background:var(--surface-3); border-left:1px solid var(--line-strong); text-align:center; min-width:64px}
 .fa-matrix tbody tr:hover td.fa-sticky{background:var(--surface-2)}
 @media (max-width:760px){ .fa-tile__v{font-size:16px} .fa-matrix .fa-sticky{min-width:140px} }
+
+/* ---- Fiber page charts ---- */
+.fa-charts{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-bottom:18px}
+.fa-chart{border:1px solid var(--line); border-radius:14px; padding:14px 16px; background:var(--surface)}
+.fa-chart__t{font-weight:700; font-size:14px}
+.fa-chart__s{color:var(--muted); font-size:12px; margin-bottom:8px}
+.fa-svg{width:100%; height:auto; display:block}
+.fa-hb{display:flex; flex-direction:column; gap:7px}
+.fa-hb__row{display:grid; grid-template-columns:130px 1fr 42px; gap:10px; align-items:center; font-size:12.5px}
+.fa-hb__l{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600}
+.fa-hb__t{height:10px; border-radius:6px; background:var(--surface-2); overflow:hidden}
+.fa-hb__t i{display:block; height:100%; border-radius:6px}
+.fa-hb__row b{text-align:right}
+@media (max-width:900px){ .fa-charts{grid-template-columns:1fr} .fa-hb__row{grid-template-columns:100px 1fr 36px} }
