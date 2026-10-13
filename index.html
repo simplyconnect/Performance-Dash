@@ -208,6 +208,30 @@
         </div>
       </div>
 
+      <!-- Fiber Agent Scorecard (sirf Fiber Calls & Sales page par) -->
+      <div class="grid">
+        <div class="card c12" id="sec-fiberagents" hidden>
+          <div class="card__head">
+            <div>
+              <div class="card__title">Fiber Agent Scorecard</div>
+              <div class="card__sub">Har agent ki Fiber calls (Fiber 4 · Fiber3 · Fiber Opp · Fiber2, talk time &gt; 1:59) aur Fiber sales — conversion, RGUs, points aur daily trend ke saath</div>
+            </div>
+            <div class="seg" id="fa_view" data-group="fiberAgView" role="group" aria-label="Agent view">
+              <button type="button" data-view="score" aria-pressed="true">Scorecard</button>
+              <button type="button" data-view="matrix" aria-pressed="false">Daily Sales</button>
+            </div>
+          </div>
+          <div class="tiles fa-tiles" id="fa_tiles"></div>
+          <div class="fa-tools">
+            <input class="tbl-search" id="fa_search" placeholder="Search agent…" />
+            <span class="tbl-count" id="fa_count"></span>
+            <button type="button" class="btn btn--ghost" id="fa_export">Export CSV</button>
+          </div>
+          <div class="tbl-wrap" id="fa_body"></div>
+          <div class="pager" id="fa_pager"></div>
+        </div>
+      </div>
+
       <!-- Agent table -->
       <div class="grid">
         <div class="card c12" id="sec-agents">
@@ -422,6 +446,7 @@
 <script src="assets/js/config.js"></script>
 <script src="assets/js/data.js"></script>
 <script src="assets/js/charts.js"></script>
+<script src="assets/js/fiber-agents.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>
