@@ -690,3 +690,39 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fon
   .wc__select{min-width:0; flex:1}
 }
 @media print{.wc{position:static; background:none} .wc__panel{box-shadow:none; border:0}}
+
+/* =========================================================
+   Fiber Agent Scorecard (Fiber Calls & Sales page)
+   ========================================================= */
+#sec-fiberagents[hidden]{display:none !important}
+.fa-tiles{margin-bottom:16px}
+.fa-tile__v{font-size:20px; font-weight:800; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.fa-tools{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px}
+.fa-tbl{border-collapse:separate; border-spacing:0; width:100%}
+.fa-tbl th.r, .fa-tbl td.r{text-align:right}
+.fa-name{font-weight:700; display:block; line-height:1.15}
+.fa-sub{display:block; color:var(--muted); font-size:11px; font-weight:500}
+.fa-pill{display:inline-block; padding:2px 9px; border-radius:999px; font-size:12.5px; font-weight:700}
+.fa-pill--good{background:var(--green-soft); color:#1B7638}
+.fa-pill--mid{background:var(--amber-soft); color:var(--amber-ink)}
+.fa-pill--low{background:var(--rose-soft); color:#B3282D}
+[data-theme="dark"] .fa-pill--good{background:#17301F; color:#7BD99A}
+[data-theme="dark"] .fa-pill--mid{background:#33290F; color:#F5C75A}
+[data-theme="dark"] .fa-pill--low{background:#3A1819; color:#FF9A9D}
+.fa-bar{position:relative; display:inline-flex; align-items:center; justify-content:flex-end; min-width:92px; height:22px; padding:0 8px; border-radius:7px; overflow:hidden}
+.fa-bar i{position:absolute; left:0; top:0; bottom:0; background:color-mix(in srgb, var(--violet) 18%, transparent); border-radius:7px}
+.fa-bar--g i{background:color-mix(in srgb, var(--green) 24%, transparent)}
+.fa-bar b{position:relative; font-weight:700}
+.fa-spark{display:block}
+.fa-tbl tfoot td{position:sticky; bottom:0; background:var(--surface-3); border-top:1px solid var(--line-strong); padding:10px 14px; white-space:nowrap}
+.fa-tbl tfoot td.fa-sticky{z-index:3}
+/* matrix */
+.fa-matrix th.fa-d{text-align:center; min-width:52px; padding:8px 6px; line-height:1.15}
+.fa-matrix th.fa-d span{display:block}
+.fa-matrix th.fa-d small{display:block; font-weight:500; color:var(--muted); font-size:10px}
+.fa-matrix td.fa-cell{text-align:center; min-width:52px; padding:8px 6px; font-weight:700; border-left:1px solid var(--line)}
+.fa-matrix .fa-sticky{position:sticky; left:0; z-index:2; background:var(--surface); border-right:1px solid var(--line-strong); min-width:190px}
+.fa-matrix th.fa-sticky--h{z-index:4}
+.fa-matrix .fa-tcol{position:sticky; right:0; background:var(--surface-3); border-left:1px solid var(--line-strong); text-align:center; min-width:64px}
+.fa-matrix tbody tr:hover td.fa-sticky{background:var(--surface-2)}
+@media (max-width:760px){ .fa-tile__v{font-size:16px} .fa-matrix .fa-sticky{min-width:140px} }
