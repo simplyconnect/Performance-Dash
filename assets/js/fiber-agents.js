@@ -3,7 +3,7 @@
    Sirf "Fiber Calls & Sales" page par dikhta hai.
 
    Calls : calls Data tab  -> queue = Fiber 4 / Fiber3 / Fiber Opp / Fiber2
-                              (Talk Time > 1:59 — DataEngine pehle hi filter kar deta hai)
+                              (Talk Time > 1:59, yaani 2:00 ya zyada — DataEngine pehle hi filter kar deta hai)
    Sales : Fiber sales     -> agent-wise sales / RGU / points / daily counts
 
    app.js renderAll() se call hota hai:
@@ -118,11 +118,11 @@ window.FiberAgents = (() => {
     { key: 'q1', label: 'Fiber3', cls: 'r', sortable: false },
     { key: 'q2', label: 'Fiber Opp', cls: 'r', sortable: false },
     { key: 'q3', label: 'Fiber2', cls: 'r', sortable: false },
+    { key: 'sales', label: 'Sales', cls: 'r' },
+    { key: 'conv', label: 'Sales %', cls: 'r' },
     { key: 'calls', label: 'Total Calls', cls: 'r' },
     { key: 'avgTalk', label: 'Avg Talk', cls: 'r' },
     { key: 'aht', label: 'AHT', cls: 'r' },
-    { key: 'sales', label: 'Sales', cls: 'r' },
-    { key: 'conv', label: 'Sales %', cls: 'r' },
     { key: 'rgu', label: 'RGUs', cls: 'r' },
     { key: 'points', label: 'Points', cls: 'r' },
     { key: 'activeDays', label: 'Active Days', cls: 'r' },
@@ -164,22 +164,22 @@ window.FiberAgents = (() => {
       <td class="rank">${medal(start + i)}</td>
       <td class="grow"><span class="agentcell"><span class="agentava" style="background:${avaColor(r.agent)}">${esc(initials(r.agent))}</span><span><b class="fa-name">${esc(r.agent)}</b><small class="fa-sub">${int(r.callsPerDay)} calls/day</small></span></span></td>
       ${r.q.map(v => `<td class="r${v ? '' : ' mut'}">${v ? int(v) : '–'}</td>`).join('')}
+      <td class="r"><span class="fa-bar fa-bar--g"><i style="width:${r.sales ? Math.max(3, r.sales / maxSales * 100) : 0}%"></i><b>${int(r.sales)}</b></span></td>
+      <td class="r">${convPill(r)}</td>
       <td class="r"><span class="fa-bar"><i style="width:${Math.max(3, r.calls / maxCalls * 100)}%"></i><b>${int(r.calls)}</b></span></td>
       <td class="r">${r.calls ? mmss(r.avgTalk) : '–'}</td>
       <td class="r">${r.calls ? mmss(r.aht) : '–'}</td>
-      <td class="r"><span class="fa-bar fa-bar--g"><i style="width:${r.sales ? Math.max(3, r.sales / maxSales * 100) : 0}%"></i><b>${int(r.sales)}</b></span></td>
-      <td class="r">${convPill(r)}</td>
       ${hasPts() ? `<td class="r">${int(r.rgu)}</td><td class="r">${int(r.points)}</td>` : ''}
       <td class="r">${int(r.activeDays)}</td>
       <td>${sparkline(r, dates)}</td>
     </tr>`).join('');
     const foot = `<tr class="fa-total"><td></td><td><b>Total (${int(list.length)} agents)</b></td>
       ${totals.q.map(v => `<td class="r"><b>${int(v)}</b></td>`).join('')}
+      <td class="r"><b>${int(totals.sales)}</b></td>
+      <td class="r"><b>${totals.calls ? pct(totals.sales / totals.calls * 100) : '–'}</b></td>
       <td class="r"><b>${int(totals.calls)}</b></td>
       <td class="r"><b>${totals.calls ? mmss(totals.talk / totals.calls) : '–'}</b></td>
       <td class="r"><b>${totals.calls ? mmss((totals.talk + totals.hold + totals.wrap) / totals.calls) : '–'}</b></td>
-      <td class="r"><b>${int(totals.sales)}</b></td>
-      <td class="r"><b>${totals.calls ? pct(totals.sales / totals.calls * 100) : '–'}</b></td>
       ${hasPts() ? `<td class="r"><b>${int(totals.rgu)}</b></td><td class="r"><b>${int(totals.points)}</b></td>` : ''}<td></td><td></td></tr>`;
     wrap.innerHTML = `<table class="tbl fa-tbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
     $('#fa_count').textContent = `${int(list.length)} agent${list.length === 1 ? '' : 's'}`;
@@ -252,9 +252,9 @@ window.FiberAgents = (() => {
   function exportCsv() {
     const { rows } = build(last.calls, last.sales);
     sortRows(rows);
-    const head = ['Agent', ...QUEUES, 'Total Calls', 'Avg Talk (s)', 'AHT (s)', 'Fiber Sales', 'Sales %', 'RGUs', 'Points', 'Active Days'];
+    const head = ['Agent', ...QUEUES, 'Fiber Sales', 'Sales %', 'Total Calls', 'Avg Talk (s)', 'AHT (s)', 'RGUs', 'Points', 'Active Days'];
     const q = v => '"' + String(v).replace(/"/g, '""') + '"';
-    const lines = [head.map(q).join(',')].concat(rows.map(r => [r.agent, ...r.q, r.calls, Math.round(r.avgTalk), Math.round(r.aht), r.sales, r.conv.toFixed(2), r.rgu, r.points, r.activeDays].map(q).join(',')));
+    const lines = [head.map(q).join(',')].concat(rows.map(r => [r.agent, ...r.q, r.sales, r.conv.toFixed(2), r.calls, Math.round(r.avgTalk), Math.round(r.aht), r.rgu, r.points, r.activeDays].map(q).join(',')));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'fiber-agents.csv';
