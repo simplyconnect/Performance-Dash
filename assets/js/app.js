@@ -244,6 +244,7 @@
     renderDataHealth(calls, sales);
     renderDailyReport(DataEngine.dailyReport(calls, sales));
     renderHourly(calls, sales);
+    if (window.FiberAgents) FiberAgents.render(calls, sales, state.page === 'fiber');
     updateFilterChipStates();
     if (WC.open) renderWeeklyCompare();
   }
@@ -275,15 +276,18 @@
     const conv = total ? (totalSales / total) * 100 : 0;
     const pConv = pTotal ? (pTotalSales / pTotal) * 100 : 0;
 
+    const fiberPv = DataEngine.getScope() === 'fiber' && DataEngine.hasFiberPivot;
     const items = [
       { k: 1, ico: 'phone', label: 'Total Calls', value: int(total), delta: deltaChip(total, pTotal) },
       { k: 2, ico: 'check', label: 'Answered Calls', value: int(answered.length) + ` <small>${pct(total ? answered.length / total * 100 : 0, 0)}</small>`, delta: deltaChip(answered.length, pAnswered) },
       { k: 3, ico: 'clock', label: 'Avg Handling Time', value: hms(aht), delta: deltaChip(aht, pAht) },
       { k: 4, ico: 'x', label: 'Abandoned Calls', value: int(abandoned) + ` <small>${pct(total ? abandoned / total * 100 : 0, 0)}</small>`, delta: deltaChip(abandoned, pAbandoned), invert: true },
-      { k: 5, ico: 'cart', label: 'Sales Closed', value: int(totalSales), delta: deltaChip(totalSales, pTotalSales) },
-      { k: 6, ico: 'layers', label: 'RGUs Sold', value: int(rgus), delta: deltaChip(rgus, pRgus) },
+      { k: 5, ico: 'cart', label: fiberPv ? 'Fiber Sales' : 'Sales Closed', value: int(totalSales), delta: deltaChip(totalSales, pTotalSales) },
+      fiberPv ? { k: 6, ico: 'layers', label: 'Active Sellers', value: int(new Set(sales.map(s => s.agent)).size), delta: deltaChip(new Set(sales.map(s => s.agent)).size, new Set(pSales.map(s => s.agent)).size) }
+              : { k: 6, ico: 'layers', label: 'RGUs Sold', value: int(rgus), delta: deltaChip(rgus, pRgus) },
       { k: 7, ico: 'target', label: 'Conversion Rate', value: pct(conv), delta: deltaChip(conv, pConv) },
-      { k: 8, ico: 'star', label: 'Total Points', value: int(points), delta: deltaChip(points, pPoints) },
+      fiberPv ? { k: 8, ico: 'star', label: 'Avg Talk Time', value: hms(answered.length ? answered.reduce((a, c) => a + c.talk, 0) / answered.length : 0), delta: '<span class="chip chip--flat">—</span>' }
+              : { k: 8, ico: 'star', label: 'Total Points', value: int(points), delta: deltaChip(points, pPoints) },
     ];
     $('#kpiRow').innerHTML = items.map(it => `
       <div class="kpi kpi--${it.k}">
