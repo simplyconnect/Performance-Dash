@@ -28,6 +28,7 @@ const DataEngine = (() => {
   function talkOk(c) { return scope !== 'fiber' || (Number(c.talk) || 0) > FIBER_MIN_TALK_SEC; }
   function callInScope(c) {
     const list = scopeQueues(); if (!list) return true;
+    if (scope === 'groups') return inReportGroup(c.queue);   // FIX: group number se
     const q = normQ(c.queue);
     return list.some(x => normQ(x) === q) && talkOk(c);
   }
@@ -44,28 +45,35 @@ const DataEngine = (() => {
   const FIBER_REQUIRE_LEAD = true;
   const hasLead = s => String(s.lead == null ? '' : s.lead).trim() !== '';
 
-  // FIX: one shared campaign matcher. Exact match, or campaign starts with
-  // the queue name and is NOT followed by another digit
-  // ("Group 5" matches "Group 5 xyz" but not "Group 50 CS").
-  // Before, some places compared only the first word ("Group"), so every
-  // campaign starting with "Group" matched every queue.
+  // FIX: GROUP NUMBER matching.
+  // Sales tab ("gRPCampaign Number") aur Calls tab ("Call Center Name") ke naam alag ho sakte hain
+  // (sale: "Group 44"  <->  call queue: "Group 44 Sales"), isliye dono ko GROUP NUMBER se match karte hain.
+  // "Group 5" kabhi "Group 50" se match nahi hoga (poora number compare hota hai).
+  function groupNum(v) {
+    const m = /^\s*(?:group|grp|g)?\s*#?\s*(\d+)/i.exec(String(v == null ? '' : v));
+    return m ? Number(m[1]) : null;
+  }
   function campMatches(camp, name) {
-    const c = normQ(camp), n = normQ(name);
+    const gc = groupNum(camp), gn = groupNum(name);
+    if (gc !== null && gn !== null) return gc === gn;      // dono mein group number -> number se match
+    const c = normQ(camp), n = normQ(name);                // warna purana naam-based match (Fiber etc.)
     if (!c || !n) return false;
     if (c === n) return true;
     return c.startsWith(n) && !/[0-9]/.test(c.charAt(n.length));
   }
+  const REPORT_GROUP_NUMS = new Set(REPORT_QUEUES.map(groupNum).filter(n => n !== null));
+  const inReportGroup = v => { const g = groupNum(v); return g !== null && REPORT_GROUP_NUMS.has(g); };
   function saleInScope(s) {
     if (scope === 'fiber') return isFiberSale(s) && (typeof s.fiber === 'boolean' || !FIBER_REQUIRE_LEAD || hasLead(s));
     const list = scopeQueues(); if (!list) return true;
-    return list.some(x => campMatches(s.campaign, x));
+    return inReportGroup(s.campaign);   // FIX: sales sirf group number se
   }
   function inReportScope(queue) {
-    return scope === 'fiber' ? FIBER_QUEUES.some(x => normQ(x) === normQ(queue)) : REPORT_QUEUES.includes(queue);
+    return scope === 'fiber' ? FIBER_QUEUES.some(x => normQ(x) === normQ(queue)) : inReportGroup(queue); // FIX: group number
   }
   function saleInReportScope(s) {
     if (scope !== 'all') return saleInScope(s);
-    return REPORT_QUEUES.some(g => campMatches(s.campaign, g)); // FIX
+    return inReportGroup(s.campaign); // FIX: group number
   }
 
   let raw = null;
