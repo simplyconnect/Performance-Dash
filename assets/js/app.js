@@ -1686,7 +1686,7 @@
     // rail navigation: smooth-scroll to section + track active state
     const railBtns = $$('.rail__btn[data-goto]');
     railBtns.forEach(b => b.addEventListener('click', () => {
-      const scoped = state.page === 'groups' || state.page === 'fiber';
+      const scoped = state.page === 'fiber';
       if (!scoped || b.dataset.goto === 'top') switchPage('overview');
       const target = document.getElementById(b.dataset.goto);
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1719,8 +1719,8 @@
       });
     });
 
-    // Call Center Groups / Fiber pages (same dashboard, scoped to those queues)
-    $$('.rail__btn[data-page="groups"], .rail__btn[data-page="fiber"]').forEach(b =>
+    // Fiber page (same dashboard, scoped to Fiber queues)
+    $$('.rail__btn[data-page="fiber"]').forEach(b =>
       b.addEventListener('click', () => switchPage(b.dataset.page)));
 
     // Closer Performance tab
@@ -1740,12 +1740,11 @@
 
   const SCOPE_META = {
     all:    { title: 'Overview',           sub: 'All queues' },
-    groups: { title: 'Groups Calls', sub: '' },
     fiber:  { title: 'Fiber Calls & sales',              sub: '' },
   };
 
   function switchPage(id) {
-    const scope = (id === 'groups' || id === 'fiber') ? id : 'all';
+    const scope = (id === 'fiber') ? id : 'all';
     const scopeChanged = DataEngine.getScope() !== scope;
     state.page = id;
     DataEngine.setScope(scope);
@@ -1779,7 +1778,7 @@
   function renderScopeBar(scope) {
     const bar = $('#scopeBar'); if (!bar) return;
     if (scope === 'all') { bar.hidden = true; bar.innerHTML = ''; return; }
-    const list = scope === 'fiber' ? DataEngine.FIBER_QUEUES : DataEngine.REPORT_QUEUES;
+    const list = DataEngine.FIBER_QUEUES;
     bar.hidden = false;
     bar.innerHTML = `<div><h2 class="hourlyHead__title">${escapeHtml(SCOPE_META[scope].title)}</h2>`
       + `<p class="hourlyHead__sub">Full dashboard — sirf in ${list.length} queues ka data: calls, sales, agents, hourly sab kuch.</p></div>`
