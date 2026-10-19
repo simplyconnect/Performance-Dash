@@ -20,15 +20,14 @@ const DataEngine = (() => {
   const FIBER_QUEUES = ['Fiber 4', 'Fiber3', 'Fiber Opp', 'Fiber2'];
   let scope = 'all';
   const normQ = v => String(v == null ? '' : v).toLowerCase().replace(/\s+/g, '');
-  function scopeQueues() { return scope === 'fiber' ? FIBER_QUEUES : scope === 'groups' ? REPORT_QUEUES : null; }
-  function setScope(name) { scope = (name === 'groups' || name === 'fiber') ? name : 'all'; }
+  function scopeQueues() { return scope === 'fiber' ? FIBER_QUEUES : null; }
+  function setScope(name) { scope = (name === 'fiber') ? name : 'all'; }
   function getScope() { return scope; }
   // Fiber page only counts calls with Talk Time > 0:01:59 (i.e. 2:00 or more).
   const FIBER_MIN_TALK_SEC = 119;
   function talkOk(c) { return scope !== 'fiber' || (Number(c.talk) || 0) > FIBER_MIN_TALK_SEC; }
   function callInScope(c) {
     const list = scopeQueues(); if (!list) return true;
-    if (scope === 'groups') return inReportGroup(c.queue);   // FIX: group number se
     const q = normQ(c.queue);
     return list.some(x => normQ(x) === q) && talkOk(c);
   }
@@ -65,8 +64,7 @@ const DataEngine = (() => {
   const inReportGroup = v => { const g = groupNum(v); return g !== null && REPORT_GROUP_NUMS.has(g); };
   function saleInScope(s) {
     if (scope === 'fiber') return isFiberSale(s) && (typeof s.fiber === 'boolean' || !FIBER_REQUIRE_LEAD || hasLead(s));
-    const list = scopeQueues(); if (!list) return true;
-    return inReportGroup(s.campaign);   // FIX: sales sirf group number se
+    return true;
   }
   function inReportScope(queue) {
     return scope === 'fiber' ? FIBER_QUEUES.some(x => normQ(x) === normQ(queue)) : inReportGroup(queue); // FIX: group number
